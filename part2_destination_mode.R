@@ -245,7 +245,7 @@ agent_plans_p2 <- vector("list", N_AGENTS)
 
 for (i in 1:N_AGENTS) {
   agent     <- pop[i, ]
-  home_zone <- sample(1:N_ZONES, 1)
+  home_zone <- agent$home_zone
   tours_in  <- agent_tours[[i]]$tours
 
   # Apply destination + mode choice to each tour
