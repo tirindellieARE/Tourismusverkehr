@@ -31,6 +31,25 @@
 
 set.seed(42)
 
+# =============================================================================
+# ASSUMPTIONS AND DEVIATIONS FROM PAPER — emitted as messages at runtime
+# =============================================================================
+message("[ASSUMPTION 9 – Part 4] Destination alternatives (Section 2.5): The paper",
+        " generates |D|=3 DESTINATION alternative sets and |P|=10 duration sets,",
+        " then randomly combines them. Here, destinations are FIXED from Part 2.",
+        " Only duration alternatives (P) are varied; D always has one element.")
+message("[ASSUMPTION 10 – Part 4] Iteration behaviour (Section 2.5): When no valid",
+        " plan is found, the paper has agents REDO ALL DAILY CHOICES (tour/stop",
+        " generation, destination, mode) with progressively tighter budgets.",
+        " Here, only the time budgets are relaxed across iterations; activity",
+        " choices are NOT regenerated.")
+message("[ASSUMPTION 11 – Part 4] bud_travel across iterations: The paper tightens",
+        " bud_travel (12→5→4→3 h) across iterations to force agents who chose",
+        " far destinations to re-choose closer ones when redoing daily choices.",
+        " Since destinations are FIXED here, a high total travel time will cause",
+        " the agent to fail ALL later iterations (which have stricter travel",
+        " budgets), making iterations 2-4 unreachable for such agents.")
+
 # Load Part 3 outputs
 load("part3_output.RData")
 cat("Part 3 data loaded.\n\n")
@@ -83,8 +102,14 @@ build_plan_with_budgets <- function(plan) {
   for (iter in 1:4) {
     bud <- TIME_BUDGETS[iter, ]
 
-    # Step 1: Check travel time budget
-    # If travel time already exceeds budget, relax to next iteration
+    # Step 1: Check travel time budget.
+    # [ASSUMPTION 11 – deviation from Section 2.5]: bud_travel tightens from
+    # 12→5→4→3 h across iterations. In the paper this forces agents who re-do
+    # daily choices to pick closer destinations. Here destinations are FIXED, so
+    # tt_total never changes. If tt_total >= bud_travel in iteration 1 (>12h),
+    # it will also exceed all later budgets, making those iterations unreachable.
+    # For agents with tt_total between 5 and 12 h, iterations 2-4 are similarly
+    # unreachable. This is a structural limitation of fixing destinations in Part 2.
     if (tt_total >= bud$bud_travel) next
 
     # Step 2: Filter duration alternatives by bud_perf (Eq. 6-7)

@@ -24,6 +24,22 @@ library(ggplot2)
 library(dplyr)
 library(tidyr)
 
+# =============================================================================
+# ASSUMPTIONS AND DEVIATIONS FROM PAPER — emitted as messages at runtime
+# =============================================================================
+message("[ASSUMPTION 12 – Part 5] Travel time per trip (Section 2.5): The paper",
+        " looks up the travel time for EACH individual trip from the network",
+        " matrix given its origin, destination, and mode. Here, total travel time",
+        " is distributed EVENLY across all activities (tt_per = total / n_acts).")
+message("[ASSUMPTION 13 – Part 5] Iterative scoring for secondary start times",
+        " (Section 2.5): The paper implements an iterative algorithm that scores",
+        " secondary activity start times against preference curves (Figure 3) and",
+        " allows agents to re-sample primary start times to improve the score.",
+        " Here, a single-pass layout is used with no iterative scoring.")
+message("[NOTE – Part 5] MOBi.sim (Section 2.6) is NOT simulated. The MATSim",
+        " feedback loop (mode/route/time adaptation and capacity-constrained",
+        " travel times fed back to MOBi.plans) is absent from this R implementation.")
+
 # Load Part 4 outputs
 load("part4_output.RData")
 cat("Part 4 data loaded.\n\n")
@@ -76,8 +92,10 @@ schedule_plan <- function(plan) {
           else
             plan$durations
 
-  # Distribute total travel time evenly across trips
-  # (simplification — in the real model each trip has its own travel time)
+  # [ASSUMPTION 12 – deviation from Section 2.5]: Each trip should have its
+  # own travel time looked up from the network matrix given its origin,
+  # destination, and mode. Per-trip travel times are not available here because
+  # Part 2 stored only total_travel. Total travel time is divided evenly instead.
   tt_per <- rep(plan$total_travel / max(length(acts), 1), length(acts))
 
   # Find primary activity — Work or Education takes scheduling priority

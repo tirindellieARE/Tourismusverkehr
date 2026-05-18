@@ -18,6 +18,18 @@
 set.seed(42)
 library(ggplot2)
 
+# =============================================================================
+# ASSUMPTIONS AND DEVIATIONS FROM PAPER — emitted as messages at runtime
+# =============================================================================
+message("[ASSUMPTION 7 – Part 3] Activity duration distributions (Figure 2): The",
+        " paper derives distributions from MZ 2015 travel diary data and segments",
+        " work durations by BOTH employment type AND number of work tours",
+        " (1 W-tour vs 2 W-tours). Here, normal distributions with invented",
+        " parameters are used, and segmentation by number of work tours is OMITTED.")
+message("[ASSUMPTION 8 – Part 3] Duration distributions are approximated with",
+        " truncated normal distributions. The paper uses EMPIRICAL CDFs from the",
+        " national travel diary survey (Federal Statistical Office, 2017).")
+
 # Load Part 2 outputs
 load("part2_output.RData")
 cat("Part 2 data loaded.\n\n")
@@ -39,7 +51,11 @@ N_DUR_ALTS <- 10   # number of duration alternatives per agent (Section 2.5)
 
 sample_duration <- function(activity_type, agent) {
   if (activity_type == "Work") {
-    # Work duration segmented by employment type (Figure 2)
+    # Work duration segmented by employment type (Figure 2).
+    # [ASSUMPTION 7 – deviation from Figure 2]: Figure 2 also segments by
+    # number of work tours per day (1 vs 2 W-tours); agents with 2 work tours
+    # have shorter per-tour durations. This distinction is NOT captured here
+    # because sample_duration() has no access to the agent's tour count.
     params <- switch(agent$employment,
       full_time    = c(mu = 8.5, sd = 1.5),
       part_time_hi = c(mu = 6.0, sd = 1.2),
