@@ -41,17 +41,14 @@ message("[CHANGE 1 – Part 1] Work tours now store subtour_idx: the integer pos
         " of the subtour activity in the activities vector (NA if no subtour).",
         " All non-work tours also carry subtour_idx=NA for structural consistency.",
         " This field is consumed by Part 2 for subtour-specific mode choice.")
-message("[CHANGE 3 – Part 1] secondary_stop_freq() refactored with signature",
-        " (agent, purpose, tour_mode, direction, n_tours). Purpose in",
-        " {business, shopping, leisure, escort} x direction in {outbound, inbound}",
-        " each receive separate MNL coefficient sets reflecting their distinct",
-        " chain geometries (e.g. business outbound capped at 1 stop; escort",
-        " outbound virtually always direct; shopping inbound most permissive).",
-        " Two new helpers: predict_mode_proxy() derives a tour mode proxy from",
-        " agent attributes (car_avail, pt_sub) for use before Part 2 mode choice;",
-        " activity_to_purpose() maps activity-type strings to purpose categories.",
-        " Business and 'other' tour loops restructured: outbound stops now appear",
-        " before the primary activity; inbound stops after.")
+message("[FIX DIV-1/7 – Part 1] secondary_stop_freq() rebuilt as ONE single MNL",
+        " per Table 1: predicts TOTAL stops (0/1/2) for secondary tours using",
+        " variables: constant, employment, age, children_in_HH, car_avail,",
+        " PT subscription, n_tours, is_business_tour (binary), acc_home.",
+        " The paper does NOT split secondary stops into outbound/inbound;",
+        " the previous 8-cell architecture is removed. Helpers",
+        " predict_mode_proxy() and activity_to_purpose() also removed.",
+        " n_stops=1 -> 1 inbound stop; n_stops=2 -> 1 outbound + 1 inbound.")
 
 N_AGENTS <- 100   # change to any number
 N_ZONES <- 20
@@ -223,35 +220,42 @@ education_tour_freq <- function(agent) {
 }
 
 # --- 3c. Business tour frequency (0/1/2) ---
+# [FIX DIV-4] Added dist (distance to primary) and acc_p (accessibility_primary)
+# per Table 1 — both were missing from the previous version.
 business_tour_freq <- function(agent, n_primary, has_work_tour) {
   e <- emp_dummies(agent); pt <- pt_dummies(agent)
-  age_n <- agent$age / 80; acc_h <- agent$accessibility_home
+  age_n <- agent$age / 80; dist <- agent$dist_primary_km / 50
+  acc_h <- agent$accessibility_home; acc_p <- agent$accessibility_primary
   V0 <- 0
   V1 <- ( -0.50 + 0.90*e$d_fulltime + 0.60*e$d_parttime_hi + 0.30*e$d_parttime_lo
           - 0.40*age_n - 0.10*agent$children_in_hh + 0.30*agent$car_avail
           + 0.10*pt$d_halbtax + 0.15*pt$d_verbund + 0.20*pt$d_general
-          - 0.50*n_primary + 0.40*has_work_tour + 0.20*acc_h )
+          - 0.50*n_primary + 0.40*has_work_tour - 0.25*dist
+          + 0.20*acc_h + 0.15*acc_p )
   V2 <- ( -2.00 + 0.60*e$d_fulltime + 0.30*e$d_parttime_hi + 0.10*e$d_parttime_lo
           - 0.60*age_n - 0.20*agent$children_in_hh + 0.40*agent$car_avail
           + 0.05*pt$d_halbtax + 0.10*pt$d_verbund + 0.15*pt$d_general
-          - 0.80*n_primary + 0.50*has_work_tour + 0.15*acc_h )
+          - 0.80*n_primary + 0.50*has_work_tour - 0.40*dist
+          + 0.15*acc_h + 0.10*acc_p )
   as.integer(mnl_choice(c("0"=V0, "1"=V1, "2"=V2)))
 }
 
 # --- 3d. Other tour frequency (0/1/2) ---
+# [FIX DIV-5] Added in_edu (main occ. in education) per Table 1.
 other_tour_freq <- function(agent, n_primary, n_business, has_work_tour) {
   e <- emp_dummies(agent); pt <- pt_dummies(agent)
-  age_n <- agent$age / 80; dist <- agent$dist_primary_km / 50
-  acc_h <- agent$accessibility_home
+  age_n  <- agent$age / 80; dist <- agent$dist_primary_km / 50
+  in_edu <- agent$in_education
+  acc_h  <- agent$accessibility_home
   n_tours_so_far <- n_primary + n_business
   V0 <- 0
   V1 <- (  0.20 + 0.20*e$d_fulltime + 0.30*e$d_parttime_hi + 0.40*e$d_parttime_lo
-          - 0.20*age_n + 0.30*agent$children_in_hh + 0.25*agent$car_avail
+          - 0.20*age_n + 0.25*in_edu + 0.30*agent$children_in_hh + 0.25*agent$car_avail
           + 0.10*pt$d_halbtax + 0.20*pt$d_verbund + 0.25*pt$d_general
           - 0.30*dist - 0.40*n_tours_so_far - 0.30*n_primary
           - 0.20*has_work_tour + 0.25*acc_h )
   V2 <- ( -1.00 + 0.10*e$d_fulltime + 0.20*e$d_parttime_hi + 0.30*e$d_parttime_lo
-          - 0.40*age_n + 0.40*agent$children_in_hh + 0.30*agent$car_avail
+          - 0.40*age_n + 0.15*in_edu + 0.40*agent$children_in_hh + 0.30*agent$car_avail
           + 0.05*pt$d_halbtax + 0.15*pt$d_verbund + 0.20*pt$d_general
           - 0.50*dist - 0.70*n_tours_so_far - 0.50*n_primary
           - 0.30*has_work_tour + 0.20*acc_h )
@@ -263,211 +267,90 @@ other_tour_freq <- function(agent, n_primary, n_business, has_work_tour) {
 # =============================================================================
 
 # --- 4a. Outbound stop frequency (0/1/2) ---
+# [FIX DIV-3] Removed acc_p (accessibility_primary): Table 1 does not include
+# it for the outbound stop model (only business tour freq and subtour use acc_p).
 outbound_stop_freq <- function(agent, n_tours, is_work_tour) {
   e <- emp_dummies(agent); pt <- pt_dummies(agent)
   age_n <- agent$age / 80; dist <- agent$dist_primary_km / 50
-  acc_h <- agent$accessibility_home; acc_p <- agent$accessibility_primary
+  acc_h <- agent$accessibility_home
   V0 <- 0
   V1 <- ( -0.50 + 0.20*e$d_fulltime + 0.40*e$d_parttime_hi + 0.50*e$d_parttime_lo
           - 0.30*age_n + 0.60*agent$children_in_hh + 0.25*agent$car_avail
           + 0.10*pt$d_halbtax + 0.15*pt$d_verbund + 0.20*pt$d_general
-          - 0.40*dist - 0.20*n_tours - 0.20*is_work_tour + 0.15*acc_h + 0.10*acc_p )
+          - 0.40*dist - 0.20*n_tours - 0.20*is_work_tour + 0.15*acc_h )
   V2 <- ( -2.00 + 0.10*e$d_fulltime + 0.20*e$d_parttime_hi + 0.30*e$d_parttime_lo
           - 0.50*age_n + 0.80*agent$children_in_hh + 0.30*agent$car_avail
           + 0.05*pt$d_halbtax + 0.10*pt$d_verbund + 0.15*pt$d_general
-          - 0.60*dist - 0.40*n_tours - 0.30*is_work_tour + 0.10*acc_h + 0.10*acc_p )
+          - 0.60*dist - 0.40*n_tours - 0.30*is_work_tour + 0.10*acc_h )
   as.integer(mnl_choice(c("0"=V0, "1"=V1, "2"=V2)))
 }
 
 # --- 4b. Inbound stop frequency (0/1/2) ---
+# [FIX DIV-3] Removed acc_p (accessibility_primary): Table 1 does not include
+# it for the inbound stop model (only business tour freq and subtour use acc_p).
 inbound_stop_freq <- function(agent, n_tours, is_work_tour) {
   e <- emp_dummies(agent); pt <- pt_dummies(agent)
   age_n <- agent$age / 80; dist <- agent$dist_primary_km / 50
-  acc_h <- agent$accessibility_home; acc_p <- agent$accessibility_primary
+  acc_h <- agent$accessibility_home
   V0 <- 0
   V1 <- ( -0.20 + 0.30*e$d_fulltime + 0.45*e$d_parttime_hi + 0.55*e$d_parttime_lo
           - 0.30*age_n + 0.50*agent$children_in_hh + 0.30*agent$car_avail
           + 0.10*pt$d_halbtax + 0.20*pt$d_verbund + 0.25*pt$d_general
-          - 0.35*dist - 0.20*n_tours + 0.20*is_work_tour + 0.20*acc_h + 0.15*acc_p )
+          - 0.35*dist - 0.20*n_tours + 0.20*is_work_tour + 0.20*acc_h )
   V2 <- ( -1.80 + 0.20*e$d_fulltime + 0.30*e$d_parttime_hi + 0.40*e$d_parttime_lo
           - 0.50*age_n + 0.60*agent$children_in_hh + 0.35*agent$car_avail
           + 0.05*pt$d_halbtax + 0.15*pt$d_verbund + 0.20*pt$d_general
-          - 0.55*dist - 0.40*n_tours + 0.25*is_work_tour + 0.15*acc_h + 0.10*acc_p )
+          - 0.55*dist - 0.40*n_tours + 0.25*is_work_tour + 0.15*acc_h )
   as.integer(mnl_choice(c("0"=V0, "1"=V1, "2"=V2)))
 }
 
-# =============================================================================
-# [CHANGE 3] HELPERS for secondary_stop_freq()
+# --- 4c. Secondary tour stop frequency (0/1/2) ---
 #
-# predict_mode_proxy(): rule-based mode estimate from agent attributes.
-#   Used in Part 1 where full mode choice (Part 2) has not yet run.
-#   GA holders: PT dominates regardless of car.
-#   Car-available, non-GA: car_driver.
-#   No car, PT subscription: pt. No car, no PT: walk.
+# [FIX DIV-1, DIV-7] ONE single MNL per Table 1. Predicts TOTAL number of
+# stops for secondary (Business/Other) tours. Variables match Table 1 exactly:
+#   constant, employment, age, children_in_HH, car_avail, PT subscription,
+#   no_of_tours, is_business_tour (binary), accessibility_home.
+# The paper gives NO outbound/inbound split for secondary tours; the previous
+# 8-cell architecture was invented. All beta coefficients are invented
+# (directionally plausible); not estimated from MZ 2015.
 #
-# activity_to_purpose(): maps an activity-type string (from assign_activity_type)
-#   to one of the four purpose categories consumed by secondary_stop_freq().
-# =============================================================================
+# Stop split convention (applied in the main loop):
+#   n_stops = 0 → no stops
+#   n_stops = 1 → 1 inbound stop (after primary activity)
+#   n_stops = 2 → 1 outbound stop + 1 inbound stop
 
-predict_mode_proxy <- function(agent) {          # [CHANGE 3]
-  if (agent$pt_sub == "general")                 return("pt")
-  if (agent$car_avail == 1)                      return("car_driver")
-  if (agent$pt_sub %in% c("verbund", "halbtax")) return("pt")
-  "walk"
-}
-
-activity_to_purpose <- function(act) {           # [CHANGE 3]
-  switch(act,
-    Shopping  = "shopping",
-    Leisure   = "leisure",
-    Accompany = "escort",
-    Business  = "business",
-    Other     = "leisure",   # catch-all to leisure
-    Education = "leisure",   # rare in secondary tours
-    "leisure"
-  )
-}
-
-# --- 4c. Secondary tour stop frequency (0/1/2) ---                [CHANGE 3]
-#
-# Signature: secondary_stop_freq(agent, purpose, tour_mode, direction, n_tours)
-#   purpose   ∈ {business, shopping, leisure, escort}
-#   tour_mode ∈ {walk, bicycle, pt, car_driver, car_passenger}
-#   direction ∈ {outbound, inbound}
-#
-# Each purpose × direction cell has its own MNL coefficient set, reflecting:
-#   - Chain geometry  : business outbound = rigid pre-meeting schedule → ≤1 stop;
-#                       escort outbound   = direct pick-up/drop-off  → ≤1 stop.
-#   - Temporal budget : outbound stops are time-constrained by arrival time at
-#                       the primary destination; inbound stops are more flexible.
-#   - Spatial access  : car enables off-axis detours; PT more route-bound.
-#   - Household roles : children_in_hh drives escort and shopping chaining.
-#
-# V2 = -Inf for cells where two extra stops are behaviourally implausible
-# (business outbound, escort outbound). The MNL then collapses to binary 0/1.
-# All beta coefficients are invented (directionally plausible); not estimated.
-# =============================================================================
-
-secondary_stop_freq <- function(agent, purpose, tour_mode, direction,   # [CHANGE 3]
-                                n_tours) {
-  e     <- emp_dummies(agent)
+secondary_stop_freq <- function(agent, is_business_tour, n_tours) {
+  e     <- emp_dummies(agent); pt <- pt_dummies(agent)
   age_n <- agent$age / 80
   acc_h <- agent$accessibility_home
-  d_car <- as.integer(tour_mode %in% c("car_driver", "car_passenger"))
-  d_pt  <- as.integer(tour_mode == "pt")
-
-  key <- paste(purpose, direction, sep = "_")
-
-  # ── Business × outbound ────────────────────────────────────────────────────
-  # Pre-meeting leg: schedule is rigid, detours penalised. Car helps slightly.
-  # Two extra stops: behaviourally implausible → V2 = -Inf.
-  if (key == "business_outbound") {
-    V0 <- 0
-    V1 <- -1.20 + 0.40*e$d_fulltime + 0.20*e$d_parttime_hi
-               - 0.50*age_n + 0.25*d_car - 0.15*d_pt
-               - 0.30*n_tours + 0.10*acc_h
-    V2 <- -Inf
-
-  # ── Business × inbound ─────────────────────────────────────────────────────
-  # Post-meeting: time pressure eases; a shopping or personal errand plausible.
-  } else if (key == "business_inbound") {
-    V0 <- 0
-    V1 <- -0.80 + 0.30*e$d_fulltime + 0.20*e$d_parttime_hi
-               - 0.40*age_n + 0.20*d_car + 0.10*d_pt
-               - 0.30*n_tours + 0.15*acc_h
-    V2 <- -2.50 + 0.10*e$d_fulltime - 0.60*age_n + 0.20*d_car
-               - 0.60*n_tours + 0.10*acc_h
-
-  # ── Shopping × outbound ────────────────────────────────────────────────────
-  # Quick errand before main shopping destination. Car enables bag-carrying.
-  # Household obligations (children) push stop probability up.
-  } else if (key == "shopping_outbound") {
-    V0 <- 0
-    V1 <- -0.60 + 0.10*e$d_fulltime + 0.20*e$d_parttime_hi + 0.30*e$d_parttime_lo
-               - 0.30*age_n + 0.35*agent$children_in_hh + 0.35*d_car + 0.10*d_pt
-               - 0.20*n_tours + 0.20*acc_h
-    V2 <- -2.00 + 0.10*e$d_parttime_lo - 0.50*age_n
-               + 0.25*agent$children_in_hh + 0.25*d_car
-               - 0.50*n_tours + 0.10*acc_h
-
-  # ── Shopping × inbound ─────────────────────────────────────────────────────
-  # Classic trip-chaining pattern: bundling errands on the way home.
-  # Highest stop propensity of all cells. Car critical for multiple bags.
-  } else if (key == "shopping_inbound") {
-    V0 <- 0
-    V1 <-  0.20 + 0.10*e$d_fulltime + 0.20*e$d_parttime_hi + 0.30*e$d_parttime_lo
-               - 0.25*age_n + 0.50*agent$children_in_hh + 0.40*d_car + 0.15*d_pt
-               - 0.15*n_tours + 0.25*acc_h
-    V2 <- -1.20 + 0.05*e$d_fulltime + 0.15*e$d_parttime_lo
-               - 0.45*age_n + 0.50*agent$children_in_hh + 0.35*d_car
-               - 0.35*n_tours + 0.15*acc_h
-
-  # ── Leisure × outbound ─────────────────────────────────────────────────────
-  # Spontaneous pre-leisure stops (food purchase, picking up a companion).
-  # Both car and PT allow social/activity chaining; moderate propensity.
-  } else if (key == "leisure_outbound") {
-    V0 <- 0
-    V1 <- -0.40 + 0.15*e$d_parttime_hi + 0.25*e$d_parttime_lo
-               - 0.20*age_n + 0.30*agent$children_in_hh + 0.25*d_car + 0.20*d_pt
-               - 0.20*n_tours + 0.20*acc_h
-    V2 <- -1.80 + 0.10*e$d_parttime_lo - 0.40*age_n
-               + 0.25*agent$children_in_hh + 0.20*d_car
-               - 0.45*n_tours + 0.10*acc_h
-
-  # ── Leisure × inbound ──────────────────────────────────────────────────────
-  # Post-leisure: shopping or dining stop plausible; flexible time budget.
-  } else if (key == "leisure_inbound") {
-    V0 <- 0
-    V1 <-  0.00 + 0.10*e$d_fulltime + 0.15*e$d_parttime_hi + 0.25*e$d_parttime_lo
-               - 0.20*age_n + 0.35*agent$children_in_hh + 0.30*d_car + 0.20*d_pt
-               - 0.15*n_tours + 0.20*acc_h
-    V2 <- -1.50 + 0.10*e$d_parttime_lo - 0.40*age_n
-               + 0.30*agent$children_in_hh + 0.25*d_car
-               - 0.40*n_tours + 0.10*acc_h
-
-  # ── Escort × outbound ──────────────────────────────────────────────────────
-  # Pick-up/drop-off is point-to-point; virtually no outbound detour.
-  # Children in HH is the primary driver. Car almost always required.
-  # Two stops: behaviourally implausible → V2 = -Inf.
-  } else if (key == "escort_outbound") {
-    V0 <- 0
-    V1 <- -1.00 - 0.20*e$d_fulltime + 0.60*agent$children_in_hh
-               - 0.30*age_n + 0.30*d_car - 0.20*d_pt
-               - 0.30*n_tours + 0.10*acc_h
-    V2 <- -Inf
-
-  # ── Escort × inbound ───────────────────────────────────────────────────────
-  # After drop-off the agent has freed time; a shopping or errand stop common.
-  } else if (key == "escort_inbound") {
-    V0 <- 0
-    V1 <- -0.30 - 0.10*e$d_fulltime + 0.20*e$d_parttime_lo
-               + 0.70*agent$children_in_hh - 0.25*age_n + 0.35*d_car + 0.10*d_pt
-               - 0.25*n_tours + 0.15*acc_h
-    V2 <- -2.20 + 0.50*agent$children_in_hh - 0.50*age_n + 0.25*d_car
-               - 0.55*n_tours + 0.05*acc_h
-
-  } else {
-    stop(sprintf("[CHANGE 3] secondary_stop_freq: unknown purpose/direction '%s'.", key))
-  }
-
-  utils <- c("0" = V0, "1" = V1, "2" = V2)
-  utils <- utils[is.finite(utils)]   # removes -Inf cells (binary choice for some)
-  as.integer(mnl_choice(utils))
+  d_bus <- as.integer(is_business_tour)
+  V0 <- 0
+  V1 <- ( -0.80 + 0.30*e$d_fulltime + 0.50*e$d_parttime_hi + 0.60*e$d_parttime_lo
+          - 0.30*age_n + 0.40*agent$children_in_hh + 0.25*agent$car_avail
+          + 0.10*pt$d_halbtax + 0.20*pt$d_verbund + 0.25*pt$d_general
+          - 0.25*n_tours - 0.20*d_bus + 0.20*acc_h )
+  V2 <- ( -2.20 + 0.15*e$d_fulltime + 0.30*e$d_parttime_hi + 0.40*e$d_parttime_lo
+          - 0.50*age_n + 0.50*agent$children_in_hh + 0.30*agent$car_avail
+          + 0.05*pt$d_halbtax + 0.15*pt$d_verbund + 0.20*pt$d_general
+          - 0.50*n_tours - 0.30*d_bus + 0.15*acc_h )
+  as.integer(mnl_choice(c("0"=V0, "1"=V1, "2"=V2)))
 }
 
 # --- 4d. Subtour (work -> X -> work) ---
 # Hard constraint: subtour requires a primary work tour (Section 2.4)
+# [FIX DIV-6] Removed dist and acc_h (absent from Table 1 subtour column);
+# added in_edu (main occ. in education, present in Table 1); kept acc_p.
 has_subtour <- function(agent, n_tours, is_work_tour) {
   if (!is_work_tour) return(FALSE)
   e <- emp_dummies(agent); pt <- pt_dummies(agent)
-  age_n <- agent$age / 80; dist <- agent$dist_primary_km / 50
-  acc_h <- agent$accessibility_home; acc_p <- agent$accessibility_primary
+  age_n  <- agent$age / 80
+  in_edu <- agent$in_education
+  acc_p  <- agent$accessibility_primary
   V_no  <- 0
   V_yes <- ( -2.00 + 0.50*e$d_fulltime + 0.30*e$d_parttime_hi + 0.10*e$d_parttime_lo
-             - 0.40*age_n - 0.30*agent$children_in_hh + 0.30*agent$car_avail
+             - 0.40*age_n + 0.20*in_edu - 0.30*agent$children_in_hh + 0.30*agent$car_avail
              + 0.10*pt$d_halbtax + 0.15*pt$d_verbund + 0.20*pt$d_general
-             - 0.50*dist - 0.30*n_tours + 0.40*is_work_tour
-             + 0.20*acc_h + 0.30*acc_p )
+             - 0.30*n_tours + 0.40*is_work_tour + 0.30*acc_p )
   mnl_choice(c("no"=V_no, "yes"=V_yes)) == "yes"
 }
 
@@ -486,6 +369,26 @@ assign_activity_type <- function(agent, direction = "inbound", tour_type = "othe
   if (direction == "subtour") {
     probs <- c(Leisure  = 0.40, Shopping = 0.30, Business = 0.15,
                Education= 0.00, Accompany= 0.05, Other    = 0.10)
+    return(sample(names(probs), 1, prob = probs))
+  }
+
+  # [FIX UA-1] "primary" direction: purpose-neutral probabilities for the main
+  # activity of a secondary (Other) tour. Previously called with direction="inbound"
+  # which biased toward shopping-like weights. A neutral table is more appropriate.
+  if (direction == "primary") {
+    if (agent$in_education == 1) {
+      probs <- c(Leisure=0.40, Shopping=0.20, Business=0.00,
+                 Education=0.05, Accompany=0.25, Other=0.10)
+    } else if (agent$employment == "full_time") {
+      probs <- c(Leisure=0.30, Shopping=0.25, Business=0.18,
+                 Education=0.00, Accompany=0.12, Other=0.15)
+    } else if (agent$employment %in% c("part_time_hi","part_time_lo")) {
+      probs <- c(Leisure=0.38, Shopping=0.30, Business=0.08,
+                 Education=0.00, Accompany=0.12, Other=0.12)
+    } else {
+      probs <- c(Leisure=0.45, Shopping=0.35, Business=0.00,
+                 Education=0.00, Accompany=0.10, Other=0.10)
+    }
     return(sample(names(probs), 1, prob = probs))
   }
 
@@ -581,25 +484,14 @@ agent_test$inbound_stop_freq <- sapply(1:N_TEST, function(i)
 
 agent_test_is_business_tour <- as.numeric(agent_test$business_tour_freq > 0)
 
-# [CHANGE 3] Test secondary_stop_freq() across representative purpose × direction
-# cells. Each agent uses a predicted mode proxy rather than the final Part 2 mode.
-agent_test_mode_proxy <- sapply(1:N_TEST, function(i)
-  predict_mode_proxy(agent_test[i, ]))
+# [FIX DIV-1/7] Test new single-MNL secondary_stop_freq() with is_business_tour flag.
+agent_test$sec_stop_bus <- sapply(1:N_TEST, function(i)
+  secondary_stop_freq(agent_test[i, ], is_business_tour = TRUE,
+                      agent_test_n_tours[i]))
 
-# Business inbound (most permissive business cell — used as summary column)
-agent_test$sec_stop_bus_in  <- sapply(1:N_TEST, function(i)
-  secondary_stop_freq(agent_test[i, ], "business", agent_test_mode_proxy[i],
-                      "inbound",  agent_test_n_tours[i]))
-
-# Shopping inbound (highest chaining propensity overall)
-agent_test$sec_stop_shop_in <- sapply(1:N_TEST, function(i)
-  secondary_stop_freq(agent_test[i, ], "shopping", agent_test_mode_proxy[i],
-                      "inbound",  agent_test_n_tours[i]))
-
-# Escort outbound (binary 0/1, children_in_hh driven)
-agent_test$sec_stop_esc_out <- sapply(1:N_TEST, function(i)
-  secondary_stop_freq(agent_test[i, ], "escort",   agent_test_mode_proxy[i],
-                      "outbound", agent_test_n_tours[i]))
+agent_test$sec_stop_other <- sapply(1:N_TEST, function(i)
+  secondary_stop_freq(agent_test[i, ], is_business_tour = FALSE,
+                      agent_test_n_tours[i]))
 
 agent_test$has_subtour <- sapply(1:N_TEST, function(i)
   has_subtour(agent_test[i, ],
@@ -619,13 +511,11 @@ cat(sprintf("\nTour frequency check — agents with no primary tour: %d / %d\n",
     sum(agent_test_n_primary == 0), N_TEST))
 cat(sprintf("Agents with subtour: %d / %d\n",
     sum(agent_test$has_subtour), N_TEST))
-# [CHANGE 3] Quick sanity check on purpose × direction stop counts
-cat(sprintf("Mean sec stops — business inbound  : %.2f\n",
-    mean(agent_test$sec_stop_bus_in)))
-cat(sprintf("Mean sec stops — shopping inbound  : %.2f  (should be highest)\n",
-    mean(agent_test$sec_stop_shop_in)))
-cat(sprintf("Mean sec stops — escort outbound   : %.2f  (binary 0/1 only)\n",
-    mean(agent_test$sec_stop_esc_out)))
+# [FIX DIV-1/7] Sanity check on new single-MNL secondary_stop_freq()
+cat(sprintf("Mean sec stops — business tours : %.2f\n",
+    mean(agent_test$sec_stop_bus)))
+cat(sprintf("Mean sec stops — other tours    : %.2f  (should be slightly higher)\n",
+    mean(agent_test$sec_stop_other)))
 cat("\n")
 
 # =============================================================================
@@ -682,32 +572,32 @@ for (i in 1:N_AGENTS) {
     tours[[length(tours)+1]] <- list(type="education", activities=acts, subtour_idx=NA_integer_)
   }
 
-  # [CHANGE 3] Mode proxy used by secondary_stop_freq() before Part 2 mode choice
-  mode_proxy <- predict_mode_proxy(agent)
-
   for (t in seq_len(n_bus)) {
-    # [CHANGE 3] Separate outbound and inbound stop counts for business tours
-    n_out <- secondary_stop_freq(agent, "business", mode_proxy, "outbound", n_tours)
-    n_in  <- secondary_stop_freq(agent, "business", mode_proxy, "inbound",  n_tours)
+    # [FIX DIV-1/7] Single MNL predicts TOTAL stops; split: n=1 → inbound,
+    # n=2 → outbound + inbound. No mode proxy needed (mode is not in Table 1).
+    n_stops <- secondary_stop_freq(agent, is_business_tour = TRUE, n_tours)
+    n_out   <- if (n_stops >= 2L) 1L else 0L
+    n_in    <- if (n_stops >= 1L) 1L else 0L
     acts  <- character(0)
-    if (n_out > 0) acts <- c(acts, replicate(n_out, assign_activity_type(agent, "outbound", "business")))
+    if (n_out > 0) acts <- c(acts, assign_activity_type(agent, "outbound", "business"))
     acts <- c(acts, "Business")
-    if (n_in  > 0) acts <- c(acts, replicate(n_in,  assign_activity_type(agent, "inbound",  "business")))
+    if (n_in  > 0) acts <- c(acts, assign_activity_type(agent, "inbound",  "business"))
     acts <- as.character(unlist(acts))
     tours[[length(tours)+1]] <- list(type="business", activities=acts, subtour_idx=NA_integer_)
   }
 
   for (t in seq_len(n_other)) {
-    # [CHANGE 3] Determine purpose from primary activity, then get outbound/inbound
-    # stop counts separately. Activity sequence: [out_stops, primary, in_stops].
-    primary_act <- assign_activity_type(agent, "inbound", "other")
-    purpose     <- activity_to_purpose(primary_act)
-    n_out <- secondary_stop_freq(agent, purpose, mode_proxy, "outbound", n_tours)
-    n_in  <- secondary_stop_freq(agent, purpose, mode_proxy, "inbound",  n_tours)
+    # [FIX UA-1] primary_act now uses direction="primary" (neutral probabilities)
+    # instead of the old "inbound" which biased stop-type composition.
+    # [FIX DIV-1/7] Single MNL total stops; split: n=1 → inbound, n=2 → out+in.
+    primary_act <- assign_activity_type(agent, "primary", "other")
+    n_stops <- secondary_stop_freq(agent, is_business_tour = FALSE, n_tours)
+    n_out   <- if (n_stops >= 2L) 1L else 0L
+    n_in    <- if (n_stops >= 1L) 1L else 0L
     acts  <- character(0)
-    if (n_out > 0) acts <- c(acts, replicate(n_out, assign_activity_type(agent, "outbound", "other")))
+    if (n_out > 0) acts <- c(acts, assign_activity_type(agent, "outbound", "other"))
     acts <- c(acts, primary_act)
-    if (n_in  > 0) acts <- c(acts, replicate(n_in,  assign_activity_type(agent, "inbound",  "other")))
+    if (n_in  > 0) acts <- c(acts, assign_activity_type(agent, "inbound",  "other"))
     acts <- as.character(unlist(acts))
     tours[[length(tours)+1]] <- list(type="other", activities=acts, subtour_idx=NA_integer_)
   }
@@ -746,7 +636,6 @@ save(pop, agent_tours, N_AGENTS,
      mnl_choice, emp_dummies, pt_dummies,
      work_tour_freq, education_tour_freq, business_tour_freq, other_tour_freq,
      outbound_stop_freq, inbound_stop_freq, secondary_stop_freq,
-     predict_mode_proxy, activity_to_purpose,   # [CHANGE 3] new helpers
      has_subtour, assign_activity_type,
      file = "part1_output.RData")
 

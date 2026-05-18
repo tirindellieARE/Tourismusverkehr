@@ -63,6 +63,10 @@ message("[Part 2] Corrections A4 (rubber banding), A5 (full Table 2 mode utility
 message("[Part 2] CHANGE 1: subtour-specific mode choice constrained by main tour mode.")
 message("[Part 2] CHANGE 2: rubber banding (Eq. 4) always applied when primary_zone",
         " is supplied, even when origin == primary_zone.")
+message("[FIX DIV-8 – Part 2] build_one_tour() now sets primary_zone=NULL for",
+        " secondary tours (Business/Other). Rubber banding (Eq. 4) previously",
+        " pulled ALL stops toward the agent's work zone; it now only applies to",
+        " stops within Work or Education tours, as Eq. 4 specifies.")
 
 # Load Part 1 outputs
 load("part1_output.RData")
@@ -378,18 +382,25 @@ get_travel_time <- function(origin, dest, mode, tt_list) {
 
 build_one_tour <- function(activities, agent, tt_list,
                            subtour_idx = NA_integer_) {   # [CHANGE 1]
-  home_zone    <- agent$home_zone
-  primary_zone <- agent$primary_dest_zone   # k in rubber banding (Eq. 4)
-  current      <- home_zone
+  home_zone <- agent$home_zone
+  current   <- home_zone
+
+  # [FIX DIV-8] Rubber banding to primary_zone (Eq. 4) must only be applied
+  # when the tour actually contains a Work or Education activity (i.e. the
+  # long-term primary location is the tour's anchor). For secondary tours
+  # (Business/Other), primary_zone is set to NULL so choose_destination() uses
+  # Eq. 3 (home-based destination choice) instead of the biased Eq. 4.
+  has_primary  <- any(activities %in% c("Work", "Education"))
+  primary_zone <- if (has_primary) agent$primary_dest_zone else NULL
 
   dests <- sapply(seq_along(activities), function(k) {
     act <- activities[[k]]
     if (act %in% c("Work", "Education")) {
       # Primary activity: destination pre-assigned from location choice (Sec 2.3)
-      d <- primary_zone
+      d <- agent$primary_dest_zone
     } else {
-      # Stop activity: [CORRECTED A4] rubber banding towards primary_zone,
-      #                [CORRECTED A6] with activity-type-specific attraction
+      # Stop activity: rubber banding only for primary tours (primary_zone NULL
+      # for secondary tours → Eq. 3 applied; non-NULL → Eq. 4 applied)
       d <- choose_destination(current, agent, tt_list,
                                activity_type = act,
                                primary_zone  = primary_zone)
@@ -399,7 +410,7 @@ build_one_tour <- function(activities, agent, tt_list,
   })
 
   # Resolve primary destination for tour-level mode choice
-  primary_dest <- if (!is.na(primary_zone)) primary_zone else dests[1]
+  primary_dest <- if (!is.null(primary_zone) && !is.na(primary_zone)) primary_zone else dests[1]
 
   # Choose main tour mode ONCE for the whole tour (Section 2.4)
   main_mode <- choose_tour_mode(home_zone, primary_dest, agent, tt_list)

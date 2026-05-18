@@ -175,18 +175,20 @@ cat(sprintf("\n%d duration alternatives — total durations:\n", length(plan_sin
 print(round(dur_totals, 2))
 
 # Step through each budget iteration manually
+# NOTE: tt_agent used here to avoid shadowing the tt travel-time matrix loaded
+# from part3_output.RData (which must remain intact for the Part 4 save call).
 cat("\nChecking against time budgets (Table 3):\n")
 for (iter in 1:4) {
-  bud <- TIME_BUDGETS[iter, ]
-  tt  <- plan_single$total_travel
+  bud      <- TIME_BUDGETS[iter, ]
+  tt_agent <- plan_single$total_travel
 
-  travel_ok <- tt < bud$bud_travel
+  travel_ok <- tt_agent < bud$bud_travel
   valid_durs <- plan_single$dur_alts[dur_totals < bud$bud_perf]
   n_valid_d  <- length(valid_durs)
 
   if (n_valid_d > 0) {
-    min_ooh <- tt + min(sapply(valid_durs, sum))
-    max_ooh <- tt + max(sapply(valid_durs, sum))
+    min_ooh <- tt_agent + min(sapply(valid_durs, sum))
+    max_ooh <- tt_agent + max(sapply(valid_durs, sum))
   } else {
     min_ooh <- max_ooh <- NA
   }
@@ -194,7 +196,7 @@ for (iter in 1:4) {
   cat(sprintf(
     "  Iter %d | bud_travel=%.1f tt=%.2f [%s] | bud_perf=%.1f valid_durs=%d/%d | bud_ooh=%.1f ooh_range=[%.2f,%.2f] [%s]\n",
     iter,
-    bud$bud_travel, tt, if (travel_ok) "OK" else "FAIL",
+    bud$bud_travel, tt_agent, if (travel_ok) "OK" else "FAIL",
     bud$bud_perf, n_valid_d, length(plan_single$dur_alts),
     bud$bud_ooh, min_ooh, max_ooh,
     if (!is.na(min_ooh) && min_ooh < bud$bud_ooh) "OK" else "FAIL"
@@ -277,7 +279,10 @@ cat("\n")
 # SAVE OUTPUT for Part 5
 # =============================================================================
 
-save(pop, agent_plans_p4, N_AGENTS, TIME_BUDGETS,
+# [FIX DIV-9] tt (travel-time matrices) and get_travel_time() are needed by
+# Part 5's schedule_plan() for per-trip travel time lookup. They are available
+# here from part3_output.RData and must be passed through to Part 5.
+save(pop, agent_plans_p4, N_AGENTS, TIME_BUDGETS, tt, get_travel_time,
      file = "part4_output.RData")
 
 cat("Part 4 complete. Output saved to part4_output.RData\n")

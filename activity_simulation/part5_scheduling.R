@@ -27,10 +27,10 @@ library(tidyr)
 # =============================================================================
 # ASSUMPTIONS AND DEVIATIONS FROM PAPER — emitted as messages at runtime
 # =============================================================================
-message("[ASSUMPTION 12 – Part 5] Travel time per trip (Section 2.5): The paper",
-        " looks up the travel time for EACH individual trip from the network",
-        " matrix given its origin, destination, and mode. Here, total travel time",
-        " is distributed EVENLY across all activities (tt_per = total / n_acts).")
+message("[FIX DIV-9 – Part 5] Travel time per trip (Section 2.5): schedule_plan()",
+        " now looks up travel time for EACH individual trip from the network",
+        " matrix (tt) using the per-activity destinations and modes stored from",
+        " Part 2. The previous even-distribution approximation is removed.")
 message("[ASSUMPTION 13 – Part 5] Iterative scoring for secondary start times",
         " (Section 2.5): The paper implements an iterative algorithm that scores",
         " secondary activity start times against preference curves (Figure 3) and",
@@ -92,11 +92,18 @@ schedule_plan <- function(plan) {
           else
             plan$durations
 
-  # [ASSUMPTION 12 – deviation from Section 2.5]: Each trip should have its
-  # own travel time looked up from the network matrix given its origin,
-  # destination, and mode. Per-trip travel times are not available here because
-  # Part 2 stored only total_travel. Total travel time is divided evenly instead.
-  tt_per <- rep(plan$total_travel / max(length(acts), 1), length(acts))
+  # [FIX DIV-9] Look up travel time for each individual trip from the network
+  # matrix given its origin, destination, and mode — as stated in Section 2.5.
+  # origin of trip k: home_zone for k=1, dest of activity k-1 for k>1.
+  # tt and get_travel_time are loaded from part4_output.RData.
+  if (length(plan$dests) == length(acts) && length(plan$modes) == length(acts)) {
+    origins_vec <- c(plan$home_zone, plan$dests[-length(plan$dests)])
+    tt_per <- mapply(function(o, d, m) get_travel_time(o, d, m, tt),
+                     origins_vec, plan$dests, plan$modes)
+  } else {
+    # Fallback: distribute evenly when dest/mode vectors are misaligned
+    tt_per <- rep(plan$total_travel / max(length(acts), 1), length(acts))
+  }
 
   # Find primary activity — Work or Education takes scheduling priority
   prim_idx <- which(acts %in% c("Work","Education"))
@@ -105,10 +112,12 @@ schedule_plan <- function(plan) {
   # Sample primary activity start time from preference distribution
   prim_start <- start_time_dist(acts[prim_idx[1]])
 
-  # Work backwards to find day start time
-  current_time <- prim_start -
-                  sum(tt_per[seq_len(prim_idx[1]-1)]) -
-                  sum(durs[seq_len(max(0, prim_idx[1]-1))])
+  # Work backwards to find start of activity 1.
+  # Trips to sum: tt_per[2], tt_per[3], ..., tt_per[prim_idx] (trips arriving at
+  # activities 2..prim_idx). tt_per[1] is home→act1 and is implicit in current_time.
+  tt_backward  <- if (prim_idx[1] > 1L) sum(tt_per[seq(2L, prim_idx[1])]) else 0
+  current_time <- prim_start - tt_backward -
+                  sum(durs[seq_len(max(0L, prim_idx[1] - 1L))])
   current_time <- max(current_time, 5.0)   # no earlier than 5am
 
   # Build schedule sequentially
@@ -272,7 +281,11 @@ extract_schedule_df <- function(plans, pop) {
   for (i in seq_along(plans)) {
     plan <- plans[[i]]
     if (is.null(plan$schedule) || length(plan$schedule) == 0) next
+    # [FIX UA-8] Use per-activity mode (indexed by activity position k_act)
+    # instead of always taking plan$modes[1] for every activity in the schedule.
+    k_act <- 0L
     for (s in plan$schedule) {
+      k_act <- k_act + 1L
       rows[[length(rows)+1]] <- data.frame(
         agent_id   = i,
         activity   = s$activity,
@@ -281,7 +294,7 @@ extract_schedule_df <- function(plans, pop) {
         duration_h = s$duration_h,
         employment = pop$employment[i],
         pt_sub     = pop$pt_sub[i],
-        mode       = if (length(plan$modes) > 0) plan$modes[1] else "unknown",
+        mode       = if (length(plan$modes) >= k_act) plan$modes[k_act] else "unknown",
         stringsAsFactors = FALSE
       )
     }
