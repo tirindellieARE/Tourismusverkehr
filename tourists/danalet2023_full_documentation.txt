@@ -1,0 +1,882 @@
+================================================================================
+TOURIST MODE CHOICE & ACTIVITY SIMULATION
+Replication of Danalet et al. (2023), STRC Conference Paper
+================================================================================
+
+Reference:
+  Danalet, A. et al. (2023). Mode choice of tourists in Switzerland.
+  Swiss Transport Research Conference (STRC), Monte Verità, 2023.
+  Python/Biogeme code: github.com/antonindanalet/mode_choice_tourists
+
+Project directory: tourists/
+Working directory when running scripts: tourists/
+
+================================================================================
+SECTION 1 — PAPER SUMMARY AND MODELLING STRATEGY
+================================================================================
+
+DATA
+----
+- Tourism Monitor Switzerland (TMS) 2017 survey: 22,128 observations.
+  File in project: data/TMS 2017.sav (SPSS format)
+- Variables used: means_of_transport_in_CH (mode), origin_country (nationality),
+  zone (urban/rural typology), accomodation (hotel binary), age, sex,
+  weighting_factor (survey expansion weight).
+- International tourists only; Swiss domestic tourists (origin_country=212)
+  are included in the estimation dataset unless explicitly filtered.
+
+MODE ALTERNATIVES (variable: means_of_transport_in_CH)
+-------------------------------------------------------
+  Code 1 = Train
+  Code 2 = Light rail / public bus
+  Code 3 = Car                         [REFERENCE — ASC_car = 0]
+  Code 4 = Camper/caravan              NOT in paper model — dropped from estimation
+  Code 5 = Motorcycle                  NOT in paper model — dropped from estimation
+  Code 6 = Long-distance bus through Europe
+  Code 7 = Private tour bus (group travel)
+  Code 8 = Bicycle / mountain bike
+  Code 9 = Other
+
+TMS VARIABLE CODING (verified from TMS 2017.sav value labels)
+--------------------------------------------------------------
+  origin_country (numeric codes):
+    17   = Germany
+    44   = France
+    74   = Italy
+    314  = United Kingdom
+    111  = Netherlands
+    4029 = United States of America
+    212  = Switzerland
+    (all other codes → rest_of_world)
+
+  zone (spatial typology):
+    1 = Big city     → urban = 1
+    2 = Small Town   → urban = 1
+    3 = Countryside  → urban = 0
+    4 = Mountain     → urban = 0
+
+  accomodation:
+    0 = Supplementary accommodation
+    1 = Hotel
+
+  age: ordinal category 1–17 (1=16–20, 2=21–25, …, 17=96–100)
+
+  weighting_factor: survey expansion weight (applied in MNL estimation)
+
+MNL MODEL STRUCTURE (following Python/Biogeme code)
+----------------------------------------------------
+- 89 parameters in the paper (requires LOS skim data: travel time, cost by mode)
+- rho² = 0.469 reported in paper (benchmark)
+- Parameter types:
+    ASC             : per non-reference alternative
+    Nationality × alt: binary dummy per nationality group × each alternative
+                       (7 groups; rest_of_world = reference, omitted)
+    Urban × alt     : binary urban flag × each alternative
+    Accommodation × alt: hotel binary × each alternative
+    Generic LOS     : travel time, cost (NOT available in TMS 2017 — absent here)
+
+- Reference alternative : Car (code 3)
+- Reference nationality : rest_of_world (omitted from formula)
+- Nationality groups (8 total): germany, france, italy, uk, netherlands,
+                                usa, switzerland, rest_of_world
+
+NOTE ON LOS DATA
+----------------
+TMS 2017 does not contain mode-specific travel time or cost variables.
+The model estimated here therefore omits the generic LOS coefficients.
+Expected consequence: rho² will be lower than the paper's 0.469.
+If LOS skims are added, include travel_time and travel_cost as generic
+variables in the mlogit formula (first pipe).
+
+================================================================================
+SECTION 2 — SCRIPT PIPELINE OVERVIEW
+================================================================================
+
+Run scripts in this order from the tourists/ directory:
+
+  1. part1_estimate_mode_choice.R       — MNL estimation from TMS
+  2. part2_tourist_population.R         — Hotel CSV → synthetic agents
+  3. part3_mode_assignment.R            — Apply MNL to assign excursion mode
+  4. part4_tourist_activity_simulation.R — Generate daily excursion chains
+  5. part5_od_matrices.R               — Aggregate to OD matrices + plots
+
+Input files required (place in tourists/data/):
+  data/TMS 2017.sav         — TMS survey (provided)
+  data/hotels.csv           — User-provided hotel file
+  data/amr_zones.gpkg       — Swiss zone shapefile (optional; enables spatial join)
+
+Output files:
+  part1_output.RData … part5_output.RData
+  od_matrices.csv
+  plots/mode_shares.pdf
+  plots/mode_shares_by_nationality.pdf
+  plots/top_od_pairs.pdf
+  plots/car_od_heatmap.pdf
+
+R packages required:
+  haven, mlogit, dfidx, sf, dplyr, tidyr, tibble, truncnorm,
+  broom, ggplot2, scales
+
+================================================================================
+SECTION 3 — ALL ASSUMPTIONS AND INVENTED PARAMETERS
+================================================================================
+
+ASSUMPTIONS (non-paper decisions flagged [ASSUMPTION] in code)
+--------------------------------------------------------------
+A-1  Part 2   Hotels not covered by zone shapefile polygon are assigned
+              to the nearest zone centroid.
+A-2  Part 2   Urban/rural typology from zone shapefile; defaults to urban=1
+              if shapefile column absent.
+A-3  Part 2   Hotel accommodation_type strings "hotel"/"Hotel"/"HOTEL" map
+              to TMS hotel=1; everything else maps to supplementary=0.
+A-4  Part 3   The assigned excursion mode is used for the main hotel→destination
+              leg AND the return leg (symmetric round trip).
+A-5  Part 3   Tour bus (mode 7) agents are on fixed group itineraries and do
+              not receive individual activity chains; excluded from Part 4 but
+              counted in OD matrices.
+A-6  Part 4   Hotel zone is the excursion origin (replaces residential home zone
+              from Scherr et al. for residents).
+A-7  Part 4   No rubber banding applied. All tourist activities are secondary-type;
+              the primary-location anchor from Scherr et al. does not apply.
+A-8  Part 4   Plan horizon = one excursion per stay-day (not a 24h resident plan).
+A-9  Part 1   Modes 4 (camper/caravan) and 5 (motorcycle) are present in TMS
+              but absent from the paper's model; these observations are dropped.
+A-10 Part 1   No LOS skim variables in TMS 2017; model estimated on
+              sociodemographic predictors only.
+A-11 Part 2   All hotel tourists assigned purpose = "leisure"; business tourists
+              in hotels are not distinguishable from hotel data alone.
+A-12 Part 4   Destination zone for excursions = hotel zone (self-loop). No tourist
+              destination choice model implemented; add one to Part 4 to generate
+              cross-zone OD flows.
+A-13 Part 3   Utility computed directly from coef_table (not predict()) for
+              portability to a new population not in the original TMS data.
+
+INVENTED PARAMETERS (values without paper source, flagged [INVENTED PARAMETER])
+--------------------------------------------------------------------------------
+IP-1  Part 2   SCALE_FACTOR = 0.01 (1 synthetic agent per 100 hotel nights).
+IP-2  Part 2   NATIONALITY_MAP: hotel CSV column name → nationality group mapping.
+IP-3  Part 2   n_nights per agent: Poisson(mean = hotel_nights × SCALE_FACTOR).
+IP-4  Part 2   party_size by nationality: Poisson lambda values
+                 germany=2.1, france=2.3, italy=2.5, uk=2.0,
+                 netherlands=2.2, usa=2.4, switzerland=1.9, rest_of_world=2.2
+IP-5  Part 4   All beta values in tourist_excursion_freq() (0/1/2 excursions/day).
+IP-6  Part 4   Activity type probabilities in assign_tourist_activity():
+                 outbound: Leisure=0.30, Shopping=0.20, Sightseeing=0.50
+                 primary:  Leisure=0.35, Shopping=0.15, Sightseeing=0.50
+                 inbound:  Leisure=0.40, Shopping=0.35, Sightseeing=0.25
+IP-7  Part 4   All beta values in tourist_stop_freq() (0/1/2 stops per excursion).
+IP-8  Part 4   Duration mean/sd by activity type (truncated normal):
+                 Leisure:     mean=2.5h, sd=1.2h, min=0.5h, max=6.0h
+                 Shopping:    mean=1.5h, sd=0.7h, min=0.25h, max=3.5h
+                 Sightseeing: mean=2.0h, sd=1.0h, min=0.5h, max=5.0h
+IP-9  Part 4   Tourist out-of-hotel time budget: 14.0 hours per excursion day.
+IP-10 Part 4   Departure time: uniform [7h, 11h] from midnight.
+IP-11 Part 4   Travel time per leg: 0.5h flat (replace with actual OD skims).
+IP-12 Part 4   Accommodation bonus in excursion frequency: hotel=0.00, supplementary=0.05.
+
+STRUCTURAL DIFFERENCES FROM SCHERR ET AL. (residents) vs. TOURIST SIMULATION
+-----------------------------------------------------------------------------
+Aspect              Residents (Scherr et al.)        Tourists (Part 4)
+-----------         -------------------------        -----------------
+Home base           Residential zone                 Hotel zone
+Activity types      Work/Educ/Business/Leisure/      Leisure/Shopping/Sightseeing
+                    Shopping/Accompany/Other
+Plan horizon        1 day (24h)                      1 excursion per stay-day
+Tour types          Primary (W/E) + secondary        Excursion tours only
+Destination         MNL nested logit + rubber band   Hotel zone = origin (placeholder)
+Mode                Scherr MNL (5 modes)             From Part 3 (7 modes, fixed)
+Rubber banding      Only for Work/Education tours    Not applied
+Stop model          Single MNL, total stops          Single MNL, total stops
+Duration source     Empirical CDFs (MZ 2015)         Truncated normal [INVENTED]
+
+DATA COMPATIBILITY NOTES (from TMS 2017.sav inspection)
+--------------------------------------------------------
+The following corrections were made to the code after inspecting the TMS file:
+  - File name is "TMS 2017.sav" (with space); not "tms_data.sav"
+  - Mode variable is means_of_transport_in_CH, not a generic "mode" column
+  - origin_country is a NUMERIC code (17, 44, 74, …), not a string
+  - TMS has only 2 accommodation categories (hotel=1, supplementary=0),
+    not 5 (hotel/hostel/airbnb/camping/other) as initially assumed
+  - Urban/rural comes from the "zone" variable (1=Big city…4=Mountain),
+    not a column named "urban_rural"
+  - Survey weights are in "weighting_factor" and are applied in mlogit()
+  - Modes 4 (camper) and 5 (motorcycle) exist in TMS but are absent from
+    the paper's model and are dropped before estimation
+
+================================================================================
+SECTION 4 — FULL R CODE
+================================================================================
+
+--------------------------------------------------------------------------------
+FILE: part1_estimate_mode_choice.R
+--------------------------------------------------------------------------------
+
+# =============================================================================
+# Tourist Mode Choice — PART 1 of 5
+# Danalet et al. (2023), STRC Conference Paper
+#
+# Covers:
+#   MNL mode choice estimation from Tourism Monitor Switzerland (TMS) data.
+#   Translation of the Python/Biogeme model at:
+#     github.com/antonindanalet/mode_choice_tourists
+#
+#   Data file: data/TMS 2017.sav (22,128 rows × 20 cols)
+#
+#   Mode alternatives — variable means_of_transport_in_CH:
+#     1 = Train
+#     2 = Light rail / public bus
+#     3 = Car  [reference alternative, ASC_car = 0]
+#     4 = Camper/caravan        } NOT in paper model — dropped
+#     5 = Motorcycle             } NOT in paper model — dropped
+#     6 = Long-distance bus through Europe
+#     7 = Private tour bus (group travel)
+#     8 = Bicycle / mountain bike
+#     9 = Other
+#
+#   Key TMS variables used:
+#     casenumber                  individual ID
+#     means_of_transport_in_CH    observed mode (1-9, numeric)
+#     origin_country              numeric country code
+#     zone                        spatial typology 1=Big city ... 4=Mountain
+#     accomodation                0=supplementary, 1=hotel
+#     age                         age category 1-17 (5-year bands: 1=16-20 ... 17=96-100)
+#     sex                         1=male, 2=female
+#     weighting_factor            survey expansion weight
+#
+#   Model structure (follows Biogeme Python code structure):
+#     - ASC per non-reference alternative
+#     - Alternative-specific nationality group interactions (7 groups + ref=rest_of_world)
+#     - Accommodation binary (hotel vs supplementary)
+#     - Zone typology (urban/rural binary)
+#     - All coefficients are alternative-specific (second pipe in mlogit formula)
+#     - Paper target: 89 parameters, rho^2 ~ 0.469
+#
+#   [ASSUMPTION] No LOS skim (travel time / cost by mode) is present in TMS 2017.
+#   The model is estimated on sociodemographic predictors only. This differs from the
+#   Biogeme model which includes generic travel time and cost; those coefficients
+#   are absent here, so rho^2 will be lower than the paper's 0.469.
+#
+# INPUTS:  data/TMS 2017.sav
+# OUTPUTS: part1_output.RData
+#   - mnl_model     : fitted mlogit object
+#   - coef_table    : tidy tibble (term, estimate, std_error)
+#   - log_likelihood: scalar
+#   - rho_squared   : McFadden's rho^2
+#   - tms_prepared  : cleaned data.frame (before dfidx conversion)
+#   - COUNTRY_CODES : named vector mapping country codes to nationality groups
+#   - ALT_CODES, REF_ALT, NAT_GROUPS, NATIONALITY_MAP : passed to Part 3
+#
+# Run next: part2_tourist_population.R
+# =============================================================================
+
+library(haven)
+library(mlogit)
+library(dfidx)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(broom)
+
+set.seed(42)
+
+TMS_FILE  <- "data/TMS 2017.sav"
+ALT_CODES <- c("1", "2", "3", "6", "7", "8", "9")
+REF_ALT   <- "3"
+
+COUNTRY_CODES <- c(
+  "17"   = "germany",
+  "44"   = "france",
+  "74"   = "italy",
+  "314"  = "uk",
+  "111"  = "netherlands",
+  "4029" = "usa",
+  "212"  = "switzerland"
+)
+
+NAT_GROUPS <- c("germany", "france", "italy", "uk", "netherlands", "usa",
+                "switzerland", "rest_of_world")
+NAT_REF <- "rest_of_world"
+
+NATIONALITY_MAP <- tribble(
+  ~nationality_label, ~group,
+  "germany",          "germany",
+  "france",           "france",
+  "italy",            "italy",
+  "uk",               "uk",
+  "united_kingdom",   "uk",
+  "netherlands",      "netherlands",
+  "usa",              "usa",
+  "united_states",    "usa",
+  "switzerland",      "switzerland"
+)
+
+message("[ASSUMPTION - Part 1] TMS 2017 has no LOS skim variables (travel time,",
+        " cost by mode). Model estimated on sociodemographic predictors only.",
+        " Paper rho^2 = 0.469 requires LOS data; expect lower rho^2 here.")
+message("[ASSUMPTION - Part 1] Modes 4 (camper/caravan) and 5 (motorcycle) are",
+        " present in TMS but absent from the paper model. These observations",
+        " are dropped from estimation.")
+message("[NOTE - Part 1] Nationality groups follow Biogeme Python code.",
+        " Reference nationality = rest_of_world (omitted from formula).")
+message("[NOTE - Part 1] Survey weights (weighting_factor) are applied in estimation.")
+
+cat("Loading TMS data from '", TMS_FILE, "' ...\n", sep = "")
+if (!file.exists(TMS_FILE))
+  stop("TMS file not found: '", TMS_FILE, "'")
+
+raw <- read_sav(TMS_FILE)
+cat(sprintf("Loaded: %d rows x %d columns.\n\n", nrow(raw), ncol(raw)))
+
+tms <- raw %>%
+  mutate(
+    person_id = as.integer(casenumber),
+    mode = as.character(as.integer(means_of_transport_in_CH)),
+    nationality_group = case_when(
+      origin_country == 17L   ~ "germany",
+      origin_country == 44L   ~ "france",
+      origin_country == 74L   ~ "italy",
+      origin_country == 314L  ~ "uk",
+      origin_country == 111L  ~ "netherlands",
+      origin_country == 4029L ~ "usa",
+      origin_country == 212L  ~ "switzerland",
+      TRUE                    ~ "rest_of_world"
+    ),
+    urban = as.integer(zone %in% c(1L, 2L)),
+    accom_hotel = as.integer(accomodation == 1L),
+    age_cat = as.integer(age),
+    male = as.integer(sex == 1L)
+  ) %>%
+  filter(
+    mode %in% ALT_CODES,
+    !is.na(nationality_group),
+    !is.na(weighting_factor)
+  )
+
+cat(sprintf("After cleaning: %d observations (dropped %d rows).\n\n",
+    nrow(tms), nrow(raw) - nrow(tms)))
+
+nat_vars <- setdiff(NAT_GROUPS, NAT_REF)
+for (g in nat_vars) {
+  tms[[paste0("nat_", g)]] <- as.integer(tms$nationality_group == g)
+}
+nat_formula_vars <- paste0("nat_", nat_vars)
+
+tms_dfidx <- dfidx(tms, idx = "person_id", choice = "mode", shape = "wide")
+
+ind_vars <- c(nat_formula_vars, "urban", "accom_hotel")
+fmla <- as.formula(paste0("mode ~ 0 | ", paste(ind_vars, collapse = " + "), " | 0"))
+
+cat("Estimating MNL model...\n")
+mnl_model <- tryCatch(
+  mlogit(fmla, data = tms_dfidx, reflevel = REF_ALT, weights = tms$weighting_factor),
+  error = function(e) {
+    message("MNL estimation failed: ", conditionMessage(e))
+    message("Retrying without weights...")
+    mlogit(fmla, data = tms_dfidx, reflevel = REF_ALT)
+  }
+)
+cat("Done.\n\n")
+
+ll_model  <- logLik(mnl_model)
+n_alts    <- length(ALT_CODES)
+n_obs     <- nrow(tms)
+ll_null   <- n_obs * log(1 / n_alts)
+log_likelihood <- as.numeric(ll_model)
+rho_squared    <- 1 - (log_likelihood / ll_null)
+
+coef_table <- broom::tidy(mnl_model) %>%
+  rename(std_error = std.error, t_stat = statistic) %>%
+  mutate(alt = sub(":.*", "", term), param = sub(".*:", "", term))
+
+cat(sprintf("Observations : %d  [Paper: ~12,809]\n", n_obs))
+cat(sprintf("Parameters   : %d  [Paper: 89]\n", length(coef(mnl_model))))
+cat(sprintf("Log-likelihood: %.2f\n", log_likelihood))
+cat(sprintf("rho^2        : %.3f  [Paper: 0.469]\n", rho_squared))
+
+tms_prepared <- tms
+save(mnl_model, coef_table, log_likelihood, rho_squared,
+     tms_prepared, COUNTRY_CODES, NATIONALITY_MAP, NAT_GROUPS, NAT_REF,
+     ALT_CODES, REF_ALT, nat_formula_vars, ind_vars,
+     file = "part1_output.RData")
+cat("Part 1 complete. Output saved to part1_output.RData\n")
+
+
+--------------------------------------------------------------------------------
+FILE: part2_tourist_population.R
+--------------------------------------------------------------------------------
+
+# =============================================================================
+# Tourist Mode Choice — PART 2 of 5
+# Danalet et al. (2023), STRC Conference Paper
+#
+# Covers:
+#   Expansion of hotel data into a synthetic tourist agent population.
+#   Hotel data format: hotel_id, x, y, accommodation_type, stars,
+#                      nights_germany, nights_france, ... (one col per nationality)
+#   LV95 coordinates (EPSG:2056).
+#
+#   SCALE_FACTOR = 0.01 [INVENTED PARAMETER]: 1 agent per 100 hotel nights.
+#
+# INPUTS:  part1_output.RData, data/hotels.csv, data/amr_zones.gpkg (optional)
+# OUTPUTS: part2_output.RData
+# =============================================================================
+
+library(dplyr); library(tidyr); library(tibble); library(sf)
+set.seed(42)
+
+SCALE_FACTOR <- 0.01   # [INVENTED PARAMETER]
+
+load("part1_output.RData")
+
+HOTEL_FILE <- "data/hotels.csv"
+ZONES_FILE <- "data/amr_zones.gpkg"
+
+hotels_raw <- read.csv(HOTEL_FILE, stringsAsFactors = FALSE)
+nights_cols <- grep("^nights_", names(hotels_raw), value = TRUE)
+
+hotels_long <- hotels_raw %>%
+  select(hotel_id, x, y, accommodation_type, stars, all_of(nights_cols)) %>%
+  pivot_longer(cols = all_of(nights_cols),
+               names_to = "nationality_label", values_to = "n_nights_hotel") %>%
+  mutate(
+    nationality_label = sub("^nights_", "", nationality_label),
+    nationality_group = case_when(
+      nationality_label == "germany"     ~ "germany",
+      nationality_label == "france"      ~ "france",
+      nationality_label == "italy"       ~ "italy",
+      nationality_label %in% c("uk","united_kingdom","britain") ~ "uk",
+      nationality_label == "netherlands" ~ "netherlands",
+      nationality_label %in% c("usa","united_states") ~ "usa",
+      nationality_label == "switzerland" ~ "switzerland",
+      TRUE ~ "rest_of_world"
+    )
+  ) %>%
+  filter(n_nights_hotel > 0)
+
+hotels_sf <- hotels_long %>%
+  distinct(hotel_id, x, y) %>%
+  st_as_sf(coords = c("x", "y"), crs = 2056)
+
+if (file.exists(ZONES_FILE)) {
+  zones_sf  <- st_read(ZONES_FILE, quiet = TRUE) %>% st_transform(2056)
+  joined    <- st_join(hotels_sf, zones_sf["zone_id"], left = TRUE)
+  n_miss    <- sum(is.na(joined$zone_id))
+  if (n_miss > 0) {
+    centroids <- st_centroid(zones_sf)
+    miss_idx  <- which(is.na(joined$zone_id))
+    nearest   <- st_nearest_feature(hotels_sf[miss_idx, ], centroids)
+    joined$zone_id[miss_idx] <- zones_sf$zone_id[nearest]
+  }
+  zone_join  <- as.data.frame(joined) %>% select(hotel_id, hotel_zone = zone_id)
+  zone_attrs <- as.data.frame(zones_sf) %>%
+    select(zone_id, any_of(c("urban_rural", "region_label", "amr_name")))
+  if (!"urban_rural" %in% names(zone_attrs)) zone_attrs$urban_rural <- 1L
+} else {
+  zone_join  <- data.frame(hotel_id = hotels_sf$hotel_id,
+                            hotel_zone = hotels_sf$hotel_id)
+  zone_attrs <- data.frame(zone_id = unique(hotels_sf$hotel_id),
+                            urban_rural = 1L, region_label = "unknown")
+}
+
+# [INVENTED PARAMETER] party_size Poisson lambda by nationality
+party_size_lambda <- c(
+  germany=2.1, france=2.3, italy=2.5, uk=2.0,
+  netherlands=2.2, usa=2.4, switzerland=1.9, rest_of_world=2.2
+)
+
+# [ASSUMPTION] "hotel"/"Hotel"/"HOTEL" strings -> accom_hotel=1; else 0
+HOTEL_TYPE_LABELS <- c("hotel", "Hotel", "HOTEL")
+
+hotels_with_zones <- hotels_long %>%
+  left_join(zone_join, by = "hotel_id") %>%
+  left_join(zone_attrs %>% rename(hotel_zone = zone_id), by = "hotel_zone") %>%
+  { if (!"urban_rural" %in% names(.)) dplyr::mutate(., urban_rural = NA_integer_) else . }
+
+tourist_pop <- hotels_with_zones %>%
+  rowwise() %>%
+  mutate(n_agents = max(1L, round(n_nights_hotel * SCALE_FACTOR))) %>%
+  ungroup() %>%
+  tidyr::uncount(n_agents, .id = "agent_seq") %>%
+  mutate(
+    agent_id    = row_number(),
+    n_nights    = pmax(1L, rpois(n(), lambda = pmax(1, n_nights_hotel * SCALE_FACTOR))),  # [INVENTED PARAMETER]
+    party_size  = pmax(1L, rpois(n(), lambda = party_size_lambda[nationality_group])),     # [INVENTED PARAMETER]
+    accom_hotel = as.integer(accommodation_type %in% HOTEL_TYPE_LABELS),                   # [ASSUMPTION]
+    urban       = as.integer(coalesce(urban_rural, 1L) >= 1L),
+    purpose     = "leisure",                                                                # [ASSUMPTION]
+    excursion_zone = hotel_zone                                                             # [ASSUMPTION A-6]
+  ) %>%
+  select(agent_id, hotel_id, excursion_zone, nationality_group,
+         accom_hotel, stars, n_nights, party_size, urban, purpose)
+
+save(tourist_pop, SCALE_FACTOR, NATIONALITY_MAP, NAT_GROUPS, ALT_CODES, REF_ALT,
+     zone_attrs, file = "part2_output.RData")
+cat("Part 2 complete. Output saved to part2_output.RData\n")
+
+
+--------------------------------------------------------------------------------
+FILE: part3_mode_assignment.R
+--------------------------------------------------------------------------------
+
+# =============================================================================
+# Tourist Mode Choice — PART 3 of 5
+# Danalet et al. (2023), STRC Conference Paper
+#
+# Covers:
+#   Application of the estimated MNL (Part 1) to assign an excursion mode
+#   to each synthetic tourist agent (Part 2).
+#   Utilities computed directly from coef_table (not predict()).
+#
+#   [ASSUMPTION A-4] Assigned mode = hotel->destination leg AND return leg.
+#   [ASSUMPTION A-5] Tour bus (mode 7) agents flagged group_tour=TRUE,
+#                    excluded from Part 4, counted in OD matrices.
+#
+# INPUTS:  part1_output.RData, part2_output.RData
+# OUTPUTS: part3_output.RData
+# =============================================================================
+
+library(dplyr); library(tibble)
+set.seed(42)
+
+load("part1_output.RData")
+load("part2_output.RData")
+
+softmax <- function(v) { v <- v - max(v); exp(v) / sum(exp(v)) }
+
+compute_utilities <- function(agent, coef_table, alt_codes, ref_alt) {
+  non_ref <- setdiff(alt_codes, ref_alt)
+  V <- setNames(rep(0.0, length(alt_codes)), alt_codes)
+
+  for (a in non_ref) {
+    # ASC
+    asc_row <- coef_table[grepl(paste0("^", a, ":\\(Intercept\\)$"), coef_table$term), ]
+    if (nrow(asc_row) > 0) V[a] <- V[a] + asc_row$estimate[1]
+
+    # Nationality interaction (nat_<group> -> alt a coefficient)
+    nat_g   <- agent$nationality_group
+    nat_col <- paste0("nat_", nat_g)
+    nat_row <- coef_table[grepl(paste0("^", a, ":", nat_col, "$"), coef_table$term), ]
+    if (nrow(nat_row) > 0) V[a] <- V[a] + nat_row$estimate[1]
+
+    # Urban interaction
+    urb_row <- coef_table[grepl(paste0("^", a, ":urban$"), coef_table$term), ]
+    if (nrow(urb_row) > 0) V[a] <- V[a] + urb_row$estimate[1] * agent$urban
+
+    # Accommodation binary (hotel=1, supplementary=0)
+    accom_row <- coef_table[grepl(paste0("^", a, ":accom_hotel$"), coef_table$term), ]
+    if (nrow(accom_row) > 0) V[a] <- V[a] + accom_row$estimate[1] * agent$accom_hotel
+
+    # [ASSUMPTION] LOS terms (travel_time, travel_cost) contribute 0 — no skim available
+  }
+  V
+}
+
+mode_results <- lapply(seq_len(nrow(tourist_pop)), function(i) {
+  agent  <- tourist_pop[i, ]
+  V      <- compute_utilities(agent, coef_table, ALT_CODES, REF_ALT)
+  probs  <- softmax(V)
+  chosen <- sample(ALT_CODES, 1, prob = probs)
+  list(agent_id=agent$agent_id, chosen_mode=chosen, group_tour=(chosen=="7"),
+       prob_train=probs["1"], prob_bus=probs["2"], prob_car=probs["3"],
+       prob_ldbus=probs["6"], prob_tourbus=probs["7"],
+       prob_bicycle=probs["8"], prob_other=probs["9"])
+})
+
+agent_modes <- dplyr::bind_rows(lapply(mode_results, as.data.frame))
+
+save(agent_modes, tourist_pop, SCALE_FACTOR, NATIONALITY_MAP, NAT_GROUPS,
+     ALT_CODES, REF_ALT, zone_attrs, file = "part3_output.RData")
+cat("Part 3 complete. Output saved to part3_output.RData\n")
+
+
+--------------------------------------------------------------------------------
+FILE: part4_tourist_activity_simulation.R
+--------------------------------------------------------------------------------
+
+# =============================================================================
+# Tourist Mode Choice — PART 4 of 5
+# Danalet et al. (2023), STRC Conference Paper
+# Activity simulation adapted from Scherr et al. (2020), EJTIR 20(4)
+#
+# STANDALONE — does NOT depend on activity_simulation/ scripts.
+#
+# Activities: Leisure, Shopping, Sightseeing (no Work, Education, Business).
+# Plan horizon: 1 excursion per stay-day; N_nights days total.
+# Mode: fixed from Part 3.
+# No rubber banding [ASSUMPTION A-7].
+# Hotel zone = excursion origin [ASSUMPTION A-6].
+# All activity parameters are [INVENTED PARAMETER] — paper does not specify them.
+#
+# INPUTS:  part3_output.RData
+# OUTPUTS: part4_output.RData
+# =============================================================================
+
+library(dplyr); library(truncnorm)
+set.seed(42)
+
+load("part3_output.RData")
+
+pop <- dplyr::left_join(tourist_pop,
+       agent_modes[, c("agent_id","chosen_mode","group_tour")], by="agent_id")
+pop_ind  <- pop[!pop$group_tour, ]
+N_AGENTS <- nrow(pop_ind)
+
+mnl_choice <- function(V) {
+  V <- V - max(V); p <- exp(V)/sum(exp(V))
+  as.integer(sample(names(V), 1, prob=p))
+}
+
+# [INVENTED PARAMETER] Excursion frequency MNL (0/1/2 per day)
+tourist_excursion_freq <- function(agent) {
+  nat_bonus <- switch(agent$nationality_group,
+    germany=0.20, france=0.10, italy=0.15, uk=0.25,
+    netherlands=0.20, usa=0.30, switzerland=0.10, rest_of_world=0.15)
+  accom_bonus <- if (isTRUE(agent$accom_hotel == 1L)) 0.00 else 0.05
+  party_n <- log1p(agent$party_size)
+  V0 <- 0
+  V1 <- -0.30 + nat_bonus + accom_bonus + 0.05 * party_n
+  V2 <- -2.00 + nat_bonus + accom_bonus - 0.20 * party_n
+  mnl_choice(c("0"=V0, "1"=V1, "2"=V2))
+}
+
+# [INVENTED PARAMETER] Stop frequency MNL (0/1/2 stops per excursion)
+tourist_stop_freq <- function(agent, n_excursions) {
+  party_n <- log1p(agent$party_size)
+  V0 <- 0
+  V1 <- -0.50 + 0.10 * party_n - 0.20 * n_excursions
+  V2 <- -1.80 - 0.10 * party_n - 0.40 * n_excursions
+  mnl_choice(c("0"=V0, "1"=V1, "2"=V2))
+}
+
+# [INVENTED PARAMETER] Activity type probabilities
+assign_tourist_activity <- function(direction) {
+  probs <- switch(direction,
+    outbound = c(Leisure=0.30, Shopping=0.20, Sightseeing=0.50),
+    primary  = c(Leisure=0.35, Shopping=0.15, Sightseeing=0.50),
+    inbound  = c(Leisure=0.40, Shopping=0.35, Sightseeing=0.25))
+  sample(names(probs), 1, prob=probs)
+}
+
+# [INVENTED PARAMETER] Duration distributions (truncated normal, hours)
+DURATION_PARAMS <- list(
+  Leisure     = list(mean=2.5, sd=1.2, min=0.5,  max=6.0),
+  Shopping    = list(mean=1.5, sd=0.7, min=0.25, max=3.5),
+  Sightseeing = list(mean=2.0, sd=1.0, min=0.5,  max=5.0)
+)
+tourist_duration_sample <- function(activity_type) {
+  p <- DURATION_PARAMS[[activity_type]]
+  rtruncnorm(1, a=p$min, b=p$max, mean=p$mean, sd=p$sd)
+}
+
+TOURIST_OOH_BUDGET <- 14.0   # [INVENTED PARAMETER] hours
+N_TRIES            <- 20
+DEPARTURE_MIN      <- 7.0    # [INVENTED PARAMETER]
+DEPARTURE_MAX      <- 11.0   # [INVENTED PARAMETER]
+TRAVEL_PER_LEG     <- 0.5    # [INVENTED PARAMETER] hours per leg
+
+`%||%` <- function(a, b) if (!is.null(a) && !is.na(a)) a else b
+
+schedule_excursion <- function(activities, durations) {
+  dep_time <- runif(1, DEPARTURE_MIN, DEPARTURE_MAX)
+  times  <- numeric(length(activities)); t_curr <- dep_time
+  for (k in seq_along(activities)) {
+    times[k] <- t_curr + TRAVEL_PER_LEG; t_curr <- times[k] + durations[k]
+  }
+  list(departure=dep_time, start_times=times,
+       return_time=t_curr+TRAVEL_PER_LEG, ooh=t_curr+TRAVEL_PER_LEG-dep_time)
+}
+
+build_excursion <- function(agent, n_excursions_today) {
+  n_stops <- tourist_stop_freq(agent, n_excursions_today)
+  acts <- character(0)
+  if (n_stops >= 2L) acts <- c(acts, assign_tourist_activity("outbound"))
+  acts <- c(acts, assign_tourist_activity("primary"))
+  if (n_stops >= 1L) acts <- c(acts, assign_tourist_activity("inbound"))
+  valid <- FALSE
+  for (try in seq_len(N_TRIES)) {
+    durs  <- sapply(acts, tourist_duration_sample)
+    sched <- schedule_excursion(acts, durs)
+    if (sched$ooh <= TOURIST_OOH_BUDGET) { valid <- TRUE; break }
+  }
+  if (!valid) { durs <- sapply(acts, function(a) DURATION_PARAMS[[a]]$min %||% 0.25)
+                sched <- schedule_excursion(acts, durs) }
+  list(activities=acts, durations=durs, start_times=sched$start_times,
+       departure=sched$departure, return_time=sched$return_time, ooh=sched$ooh,
+       excursion_zone=agent$excursion_zone, mode=agent$chosen_mode, plan_valid=valid)
+}
+
+tourist_plans <- vector("list", N_AGENTS)
+for (i in seq_len(N_AGENTS)) {
+  agent <- pop_ind[i, ]
+  day_plans <- vector("list", agent$n_nights)
+  for (day in seq_len(agent$n_nights)) {
+    n_ex <- tourist_excursion_freq(agent)
+    excursions <- vector("list", n_ex)
+    for (ex in seq_len(max(n_ex, 1L))) {
+      if (n_ex == 0L) break
+      excursions[[ex]] <- build_excursion(agent, n_ex)
+    }
+    day_plans[[day]] <- list(day=day, n_excursions=n_ex,
+                              excursions=excursions[seq_len(n_ex)])
+  }
+  tourist_plans[[i]] <- list(agent_id=agent$agent_id, hotel_id=agent$hotel_id,
+    nationality_group=agent$nationality_group, chosen_mode=agent$chosen_mode,
+    n_nights=agent$n_nights, day_plans=day_plans)
+}
+
+save(tourist_plans, pop_ind, N_AGENTS, SCALE_FACTOR,
+     DURATION_PARAMS, TOURIST_OOH_BUDGET, TRAVEL_PER_LEG,
+     file = "part4_output.RData")
+cat("Part 4 complete. Output saved to part4_output.RData\n")
+
+
+--------------------------------------------------------------------------------
+FILE: part5_od_matrices.R
+--------------------------------------------------------------------------------
+
+# =============================================================================
+# Tourist Mode Choice — PART 5 of 5
+# Danalet et al. (2023), STRC Conference Paper
+#
+# Covers:
+#   Aggregation of synthetic tourist trips to OD matrices by mode.
+#   Weight = 1/SCALE_FACTOR per synthetic trip.
+#
+#   [ASSUMPTION] All trips are self-loops (origin = dest = hotel zone) until
+#   a destination model is added to Part 4.
+#
+# INPUTS:  part3_output.RData, part4_output.RData
+# OUTPUTS: part5_output.RData, od_matrices.csv, plots/
+# =============================================================================
+
+library(dplyr); library(tidyr); library(tibble); library(ggplot2)
+set.seed(42)
+
+load("part3_output.RData"); load("part4_output.RData")
+
+MODE_LABELS <- c("1"="Train","2"="Bus","3"="Car","6"="Long-dist bus",
+                 "7"="Tour bus","8"="Bicycle","9"="Other")
+
+# Extract trip list from individual agent plans
+trip_rows <- list()
+for (tp in tourist_plans) {
+  for (dp in tp$day_plans) {
+    for (ex in dp$excursions) {
+      if (is.null(ex)) next
+      trip_rows[[length(trip_rows)+1]] <- data.frame(
+        agent_id=tp$agent_id, day=dp$day,
+        nationality_group=tp$nationality_group, mode=ex$mode,
+        origin_zone=as.character(ex$excursion_zone),
+        dest_zone=as.character(ex$excursion_zone),   # self-loop
+        ooh_h=ex$ooh, n_activities=length(ex$activities),
+        weight=1/SCALE_FACTOR, stringsAsFactors=FALSE)
+    }
+  }
+}
+
+# Add group tour (mode 7) trips
+group_agents <- dplyr::left_join(
+  agent_modes[agent_modes$group_tour, c("agent_id","chosen_mode")],
+  tourist_pop[, c("agent_id","excursion_zone","nationality_group","n_nights")],
+  by="agent_id")
+for (i in seq_len(nrow(group_agents))) {
+  ga <- group_agents[i, ]
+  for (d in seq_len(ga$n_nights)) {
+    trip_rows[[length(trip_rows)+1]] <- data.frame(
+      agent_id=ga$agent_id, day=d, nationality_group=ga$nationality_group,
+      mode=ga$chosen_mode, origin_zone=as.character(ga$excursion_zone),
+      dest_zone=as.character(ga$excursion_zone), ooh_h=NA_real_,
+      n_activities=NA_integer_, weight=1/SCALE_FACTOR, stringsAsFactors=FALSE)
+  }
+}
+
+trip_list <- dplyr::bind_rows(trip_rows)
+
+# Build OD matrices per mode
+all_zones   <- sort(unique(c(trip_list$origin_zone, trip_list$dest_zone)))
+od_matrices <- list()
+for (m in c(names(MODE_LABELS), "all")) {
+  trips_m <- if (m=="all") trip_list else trip_list[trip_list$mode==m, ]
+  agg <- trips_m %>%
+    dplyr::group_by(origin_zone, dest_zone) %>%
+    dplyr::summarise(demand=sum(weight), .groups="drop")
+  mat <- matrix(0, nrow=length(all_zones), ncol=length(all_zones),
+                dimnames=list(all_zones, all_zones))
+  for (k in seq_len(nrow(agg))) {
+    o <- agg$origin_zone[k]; d <- agg$dest_zone[k]
+    if (o %in% all_zones && d %in% all_zones) mat[o,d] <- mat[o,d] + agg$demand[k]
+  }
+  od_matrices[[m]] <- mat
+}
+
+od_long <- dplyr::bind_rows(lapply(names(MODE_LABELS), function(m) {
+  mat <- od_matrices[[m]]
+  expand.grid(origin_zone=rownames(mat), dest_zone=colnames(mat),
+              stringsAsFactors=FALSE) %>%
+    dplyr::mutate(mode=m, mode_label=MODE_LABELS[m], demand=as.vector(mat)) %>%
+    dplyr::filter(demand > 0)
+}))
+write.csv(od_long, "od_matrices.csv", row.names=FALSE)
+
+# Plots
+dir.create("plots", showWarnings=FALSE)
+mode_shares <- trip_list %>% dplyr::group_by(mode) %>%
+  dplyr::summarise(weighted_trips=sum(weight), .groups="drop") %>%
+  dplyr::mutate(mode_label=MODE_LABELS[mode], share=weighted_trips/sum(weighted_trips))
+p1 <- ggplot(mode_shares, aes(x=reorder(mode_label,-share), y=share)) +
+  geom_col(fill="#2C7BB6") + scale_y_continuous(labels=scales::percent) +
+  labs(title="Tourist Excursion Mode Shares", x=NULL, y="Share") + theme_minimal()
+ggsave("plots/mode_shares.pdf", p1, width=8, height=5)
+
+mode_by_nat <- trip_list %>%
+  dplyr::group_by(nationality_group, mode) %>%
+  dplyr::summarise(weighted_trips=sum(weight), .groups="drop") %>%
+  dplyr::group_by(nationality_group) %>%
+  dplyr::mutate(share=weighted_trips/sum(weighted_trips), mode_label=MODE_LABELS[mode])
+p2 <- ggplot(mode_by_nat, aes(x=mode_label, y=share, fill=mode_label)) +
+  geom_col(show.legend=FALSE) + facet_wrap(~nationality_group, scales="free_y") +
+  scale_y_continuous(labels=scales::percent) +
+  labs(title="Mode Shares by Nationality Group", x=NULL, y="Share") +
+  theme_minimal() + theme(axis.text.x=element_text(angle=45, hjust=1))
+ggsave("plots/mode_shares_by_nationality.pdf", p2, width=14, height=9)
+
+save(od_matrices, od_long, trip_list, file="part5_output.RData")
+cat("Part 5 complete. Output saved to part5_output.RData\n")
+cat("OD matrices exported to od_matrices.csv\n")
+cat("Plots saved to plots/\n")
+
+
+================================================================================
+SECTION 5 — VERIFICATION CHECKLIST
+================================================================================
+
+Script 1 (MNL estimation):
+  [ ] rho^2 printed; note deviation from paper's 0.469 (LOS data absent)
+  [ ] Number of observations ~12,809 after removing modes 4/5 and missing weights
+  [ ] Coefficient signs sensible: Germans should have higher train utility;
+      tour bus ASC should be negative (niche mode)
+  [ ] Mode shares: predicted = observed (when no LOS, ASC absorbs all share)
+
+Script 2 (Population):
+  [ ] nrow(tourist_pop) ~ sum(hotel nights) * 0.01
+  [ ] Nationality distribution reflects hotel input file
+  [ ] accom_hotel distribution matches expectation (hotel vs supplementary split)
+
+Script 3 (Mode assignment):
+  [ ] Mode shares by nationality plausible vs. TMS observed shares
+  [ ] Germans: higher train share expected
+  [ ] Tour bus (mode 7) share flagged; group_tour count printed
+
+Script 4 (Activity simulation):
+  [ ] Mean ooh per excursion < 14h (budget constraint)
+  [ ] Valid plan rate > 95%
+  [ ] Activity type distribution: Sightseeing dominant (~45-50%), Shopping ~25%
+
+Script 5 (OD matrices):
+  [ ] sum(od_matrices[["all"]]) == sum(trip_list$weight) (verify with output)
+  [ ] Cross-zone pairs = 0 (expected until destination model added)
+  [ ] PDF plots created in plots/
+
+================================================================================
+END OF DOCUMENT
+================================================================================
