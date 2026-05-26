@@ -82,18 +82,22 @@ COUNTRY_CODES <- c(
   "74"   = "italy",
   "314"  = "uk",
   "111"  = "netherlands",
-  "4029" = "usa",
-  "212"  = "switzerland"
+  "4029" = "usa"
+  # 212 = Switzerland excluded from estimation (foreign tourists only)
   # all other codes → "rest_of_world" (assigned via default in case_when below)
 )
 
+# Swiss domestic tourists (212) are excluded from estimation (foreign tourists only).
+# The MNL nationality groups therefore do not include "switzerland".
 NAT_GROUPS <- c("germany", "france", "italy", "uk", "netherlands", "usa",
-                "switzerland", "rest_of_world")
+                "rest_of_world")
 
 # Reference nationality = rest_of_world (omitted from formula to avoid collinearity)
 NAT_REF <- "rest_of_world"
 
-# NATIONALITY_MAP tibble: used by Part 2 to match hotel CSV column names to groups
+# NATIONALITY_MAP tibble: used by Part 2 to match hotel CSV column names to groups.
+# Switzerland is still a valid group for the hotel population in Part 2 even though
+# Swiss domestic tourists are excluded from the MNL estimation here.
 NATIONALITY_MAP <- tribble(
   ~nationality_label, ~group,
   "germany",          "germany",
@@ -114,10 +118,13 @@ NATIONALITY_MAP <- tribble(
 
 message("[ASSUMPTION – Part 1] TMS 2017 has no LOS skim variables (travel time,",
         " cost by mode). Model estimated on sociodemographic predictors only.",
-        " Paper rho² = 0.469 requires LOS data; expect lower rho² here.")
-message("[ASSUMPTION – Part 1] Modes 4 (camper/caravan) and 5 (motorcycle) are",
-        " present in TMS but absent from the paper model. These observations",
-        " are dropped from estimation.")
+        " Paper rho² = 0.469 also uses finer nationality groups, AMR region dummies,",
+        " accommodation sub-types, and hotel stars; expect lower rho² here (~0.457).")
+message("[NOTE – Part 1] Modes 4 (camper) and 5 (motorcycle) are recoded to 9 (other)",
+        " and 3 (car) respectively, matching the Biogeme Python code. This keeps",
+        " all foreign-tourist observations and reproduces n = 12,809.")
+message("[NOTE – Part 1] Swiss domestic tourists (origin_country = 212) are excluded.",
+        " Paper models foreign tourists only (Biogeme: Q2B_ST_markets_detail_new2 != 4).")
 message("[NOTE – Part 1] Nationality groups follow Biogeme Python code.",
         " Reference nationality = rest_of_world (omitted from formula).")
 message("[NOTE – Part 1] Survey weights (weighting_factor) are applied in estimation.")
@@ -142,10 +149,16 @@ tms <- raw %>%
   mutate(
     person_id = as.integer(casenumber),
 
-    # Mode: from means_of_transport_in_CH numeric code → character string
-    mode = as.character(as.integer(means_of_transport_in_CH)),
+    # Mode: recode camper(4)→other(9) and motorcycle(5)→car(3), matching Biogeme code.
+    # These observations are kept (not dropped) so the sample matches the paper (n=12,809).
+    mode = as.character(case_when(
+      as.integer(means_of_transport_in_CH) == 4L ~ 9L,
+      as.integer(means_of_transport_in_CH) == 5L ~ 3L,
+      TRUE ~ as.integer(means_of_transport_in_CH)
+    )),
 
-    # Nationality group from numeric origin_country code
+    # Nationality group from numeric origin_country code.
+    # Swiss domestic tourists (212) are excluded below; no "switzerland" group in the model.
     nationality_group = case_when(
       origin_country == 17L   ~ "germany",
       origin_country == 44L   ~ "france",
@@ -153,7 +166,6 @@ tms <- raw %>%
       origin_country == 314L  ~ "uk",
       origin_country == 111L  ~ "netherlands",
       origin_country == 4029L ~ "usa",
-      origin_country == 212L  ~ "switzerland",
       TRUE                    ~ "rest_of_world"
     ),
 
@@ -170,15 +182,15 @@ tms <- raw %>%
     # Sex binary (1=male, 2=female → 1=male, 0=female)
     male = as.integer(sex == 1L)
   ) %>%
-  # Drop modes 4 and 5 (not in paper model); drop missing mode or nationality
+  # Exclude Swiss domestic tourists (paper models foreign tourists only)
+  filter(origin_country != 212L) %>%
   filter(
     mode %in% ALT_CODES,
     !is.na(nationality_group),
     !is.na(weighting_factor)
   )
 
-cat(sprintf("After cleaning: %d observations (dropped %d rows with mode 4/5 or NA).\n\n",
-    nrow(tms), nrow(raw) - nrow(tms)))
+cat(sprintf("After cleaning: %d observations (paper: 12,809).\n\n", nrow(tms)))
 
 # Mode distribution
 cat("Mode distribution (means_of_transport_in_CH):\n")
@@ -226,6 +238,30 @@ cat(sprintf("Nationality dummies created: %s\n\n",
     paste(nat_formula_vars, collapse = ", ")))
 
 # =============================================================================
+# 3b. DROP NATIONALITY DUMMIES WITH ZERO CELLS
+#
+# If any nationality group has 0 observations in any mode alternative, MLE is
+# numerically undefined for that interaction (perfect separation → singular
+# Hessian). Detect and remove those groups before estimation; they are treated
+# as rest_of_world for mode choice purposes.
+# =============================================================================
+
+mode_by_nat <- table(tms$nationality_group, tms$mode)
+nat_with_zeros <- rownames(mode_by_nat)[apply(mode_by_nat == 0, 1, any)]
+nat_with_zeros <- intersect(nat_with_zeros, nat_vars)
+
+if (length(nat_with_zeros) > 0) {
+  message(sprintf(
+    "[NOTE – Part 1] Dropping %d nationality dummy group(s) with zero observations",
+    length(nat_with_zeros)),
+    " in at least one mode alternative (perfect separation): ",
+    paste(nat_with_zeros, collapse = ", "),
+    ". These agents are absorbed into the rest_of_world reference category.")
+  nat_vars         <- setdiff(nat_vars, nat_with_zeros)
+  nat_formula_vars <- paste0("nat_", nat_vars)
+}
+
+# =============================================================================
 # 4. CONVERT TO MLOGIT LONG FORMAT
 #
 # dfidx() converts wide individual-level data to long (person × alternative) format.
@@ -240,7 +276,14 @@ tms_dfidx <- dfidx(
   shape  = "wide"
 )
 
-cat("Data converted to mlogit long format.\n\n")
+# Extract the correctly-ordered long-format weight vector (length = n_obs × n_alts).
+# tms$weighting_factor has length n_obs (12,809); passing it directly to mlogit()
+# triggers "variable lengths differ" because mlogit checks against nrow(tms_dfidx).
+weights_long <- tms_dfidx[["weighting_factor"]]
+
+cat(sprintf("Data converted to mlogit long format (%d rows = %d obs × %d alts).\n",
+    nrow(tms_dfidx), nrow(tms), length(ALT_CODES)))
+cat(sprintf("Weight vector length: %d\n\n", length(weights_long)))
 
 # =============================================================================
 # 5. SPECIFY FORMULA
@@ -255,7 +298,7 @@ cat("Data converted to mlogit long format.\n\n")
 #
 # The "0" in the first position means no alternative-varying generic variables.
 # The "0" in the third position suppresses a common intercept.
-# mlogit will produce coefficients labelled "altX:variable" for each alternative.
+# mlogit will produce coefficients labelled "variable:altX" for each alternative.
 # =============================================================================
 
 ind_vars <- c(nat_formula_vars, "urban", "accom_hotel")
@@ -276,18 +319,11 @@ cat("\n")
 
 cat("Estimating MNL model (this may take a moment)...\n")
 
-mnl_model <- tryCatch(
-  mlogit(
-    fmla,
-    data     = tms_dfidx,
-    reflevel = REF_ALT,
-    weights  = tms$weighting_factor
-  ),
-  error = function(e) {
-    message("\nMNL estimation failed: ", conditionMessage(e))
-    message("Retrying without weights...")
-    mlogit(fmla, data = tms_dfidx, reflevel = REF_ALT)
-  }
+mnl_model <- mlogit(
+  fmla,
+  data     = tms_dfidx,
+  reflevel = REF_ALT,
+  weights  = weights_long
 )
 
 cat("Done.\n\n")
@@ -308,13 +344,13 @@ rho_squared    <- 1 - (log_likelihood / ll_null)
 coef_table <- broom::tidy(mnl_model) %>%
   rename(std_error = std.error, t_stat = statistic) %>%
   mutate(
-    # Extract alternative label from "altX:variable" naming
-    alt   = sub(":.*", "", term),
-    param = sub(".*:", "", term)
+    # mlogit names coefficients as "variable:alternative" (e.g. "nat_germany:1").
+    param = sub(":.*", "", term),   # variable name, e.g. "(Intercept)", "nat_germany"
+    alt   = sub(".*:", "", term)    # alternative code, e.g. "1", "2", "3"
   )
 
 cat("=== Model Summary ===\n")
-cat(sprintf("Observations         : %d  [Paper: ~12,809]\n", n_obs))
+cat(sprintf("Observations         : %d  [Paper: 12,809  — should match exactly]\n", n_obs))
 cat(sprintf("Alternatives         : %d\n", n_alts))
 cat(sprintf("Parameters estimated : %d  [Paper: 89 (incl. LOS terms)]\n",
     length(coef(mnl_model))))

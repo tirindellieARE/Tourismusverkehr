@@ -66,13 +66,13 @@ message("[INVENTED PARAMETER – Part 2] party_size drawn from Poisson(lambda)",
 load("part1_output.RData")
 cat("Part 1 data loaded.\n")
 
-HOTEL_FILE  <- "data/hotels.csv"
-ZONES_FILE  <- "data/amr_zones.gpkg"   # or .shp; must have zone_id column
+HOTEL_FILE  <- "data/hotels_clean.csv"   # produced by prepare_hotel_data.R
+ZONES_FILE  <- "data/amr_zones.gpkg"    # or .shp; must have zone_id column
 
+# Run prepare_hotel_data.R first if hotels_clean.csv does not exist yet.
 if (!file.exists(HOTEL_FILE))
   stop("Hotel file not found: ", HOTEL_FILE,
-       "\n  Expected columns: hotel_id, x, y, accommodation_type, stars,",
-       "\n  plus one 'nights_<nationality>' column per nationality group.")
+       "\n  Run prepare_hotel_data.R first to generate hotels_clean.csv from PASTA_HESTA.xlsx.")
 
 hotels_raw <- read.csv(HOTEL_FILE, stringsAsFactors = FALSE)
 cat(sprintf("Loaded %d hotels from %s.\n\n", nrow(hotels_raw), HOTEL_FILE))
@@ -85,8 +85,10 @@ cat(sprintf("Loaded %d hotels from %s.\n\n", nrow(hotels_raw), HOTEL_FILE))
 nights_cols <- grep("^nights_", names(hotels_raw), value = TRUE)
 
 if (length(nights_cols) == 0)
-  stop("No 'nights_*' columns found in hotels.csv. ",
-       "Expected one column per nationality group, e.g. nights_germany, nights_france, ...")
+  stop("No 'nights_*' columns found in hotels_clean.csv. ",
+       "Expected: nights_germany, nights_france, nights_italy, nights_uk, ",
+       "nights_netherlands, nights_usa, nights_switzerland, nights_rest_of_world. ",
+       "Run prepare_hotel_data.R to generate this file.")
 
 cat(sprintf("Found %d nights columns: %s\n\n",
     length(nights_cols), paste(nights_cols, collapse = ", ")))

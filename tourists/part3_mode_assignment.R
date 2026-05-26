@@ -74,32 +74,29 @@ compute_utilities <- function(agent, coef_table, alt_codes, ref_alt) {
 
   V <- setNames(rep(0.0, length(alt_codes)), alt_codes)
 
+  # mlogit names coefficients as "variable:alternative" (e.g. "nat_germany:1").
+  # All lookups below use exact string matching against coef_table$term.
   for (a in non_ref) {
-    # ASC
-    asc_row <- coef_table[grepl(paste0("^", a, ":\\(Intercept\\)$"), coef_table$term), ]
+    # ASC: term is "(Intercept):<alt>"
+    asc_row <- coef_table[coef_table$term == paste0("(Intercept):", a), ]
     if (nrow(asc_row) > 0) V[a] <- V[a] + asc_row$estimate[1]
 
-    # Nationality interaction for this alternative
+    # Nationality: term is "nat_<group>:<alt>"
     nat_g   <- agent$nationality_group
-    nat_col <- paste0("a", a, "_", nat_g)
-    nat_row <- coef_table[grepl(paste0(":", nat_col, "$"), coef_table$term), ]
+    nat_row <- coef_table[coef_table$term == paste0("nat_", nat_g, ":", a), ]
     if (nrow(nat_row) > 0) V[a] <- V[a] + nat_row$estimate[1]
 
-    # Urban interaction (if in model)
-    urb_row <- coef_table[grepl(paste0("^", a, ":urban$"), coef_table$term), ]
+    # Urban: term is "urban:<alt>"
+    urb_row <- coef_table[coef_table$term == paste0("urban:", a), ]
     if (nrow(urb_row) > 0) V[a] <- V[a] + urb_row$estimate[1] * agent$urban
 
-    # Accommodation binary interaction (hotel=1, supplementary=0).
-    # TMS only has these two categories; coefficient name is "accom_hotel".
-    accom_row <- coef_table[grepl(paste0("^", a, ":accom_hotel$"), coef_table$term), ]
+    # Accommodation: term is "accom_hotel:<alt>"
+    accom_row <- coef_table[coef_table$term == paste0("accom_hotel:", a), ]
     if (nrow(accom_row) > 0) V[a] <- V[a] + accom_row$estimate[1] * agent$accom_hotel
 
-    # Generic travel time and cost: set to 0 if no LOS data available.
-    # [ASSUMPTION] Without LOS skims, these terms contribute 0 to utility.
-    # When LOS data is added, replace 0 with agent$travel_time_a and agent$cost_a.
-    tt_row   <- coef_table[coef_table$term == "travel_time", ]
-    cost_row <- coef_table[coef_table$term == "travel_cost", ]
-    # (no agent-level LOS here; plug in when available)
+    # [ASSUMPTION] No LOS skims: travel_time / travel_cost contribute 0.
+    # When LOS data is added, look up "travel_time" and "travel_cost" (generic
+    # coefficients, no alternative suffix) and multiply by agent$tt_a / agent$cost_a.
   }
 
   V
