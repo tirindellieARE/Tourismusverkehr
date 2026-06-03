@@ -23,14 +23,13 @@
 #   germany=33, france=39, italy=57, netherlands=87, switzerland=109,
 #   uk=151, usa=153; rest_of_world = row-sum of all other 66 Logiernächte cols.
 #
-# [ASSUMPTION] Only hotels with betriebsart == "Hotel" are kept; camping/
-#   Kurbetriebe differ structurally from TMS hotel variable (0/1 binary).
+# [ASSUMPTION] All establishments with a non-NA betriebsart are retained
+#   (Hotel, Camping, Kurbetriebe, etc.) — accommodation_type mirrors betriebsart.
 # [ASSUMPTION] Geocoding via swisstopo SearchServer API (free, LV03→LV95
-#   conversion: coord_x = y+2e6, coord_y = x+1e6). Hotels not resolvable
+#   conversion: coord_x = y+2e6, coord_y = x+1e6). Establishments not resolvable
 #   by API are kept with NA coords and dropped from part2 spatial join.
-# [ASSUMPTION] Accommodation type = "Hotel" for all betriebsart=="Hotel" rows.
-#   Stars are parsed from kategorie string (e.g. "3-Stern" → 3).
-# [INVENTED PARAMETER] party_size lambda per nationality (used in part2).
+# [ASSUMPTION] Stars are parsed from kategorie string (e.g. "3-Stern" → 3);
+#   non-hotel establishment types will have stars = NA.
 # =============================================================================
 
 library(readxl)
@@ -76,10 +75,11 @@ cat(sprintf("Loaded %d establishments.\n", nrow(raw)))
 cat("Betriebsart distribution:\n")
 print(table(raw$betriebsart, useNA = "ifany"))
 
-# [ASSUMPTION] Keep only Hotels (betriebsart == "Hotel")
-hotels <- raw[!is.na(raw$betriebsart) & raw$betriebsart == "Hotel", ]
-cat(sprintf("\nAfter keeping Hotel rows: %d hotels.\n", nrow(hotels)))
-cat(sprintf("Hotels with missing coords: %d\n\n",
+hotels <- raw[!is.na(raw$betriebsart), ]
+cat(sprintf("\nAll establishments (non-NA betriebsart): %d\n", nrow(hotels)))
+cat("Betriebsart breakdown:\n")
+print(table(hotels$betriebsart))
+cat(sprintf("Establishments with missing coords: %d\n\n",
     sum(is.na(hotels$coord_x))))
 
 # =============================================================================
@@ -123,9 +123,41 @@ geocode_swisstopo <- function(name, adresse, gemeinde) {
 if (file.exists(CACHE_FILE)) {
   cat("Loading cached geocoding results from", CACHE_FILE, "...\n")
   geocode_cache <- read.csv(CACHE_FILE, stringsAsFactors = FALSE)
-  cat(sprintf("  Cache: %d hotels, %d with coords.\n\n",
+  cat(sprintf("  Cache: %d establishments, %d with coords.\n\n",
       nrow(geocode_cache),
       sum(!is.na(geocode_cache$coord_x_geo))))
+
+  # Geocode any establishments added since the cache was built (missing coords, not cached)
+  uncached_miss_idx <- which(
+    !hotels$hotel_id %in% geocode_cache$hotel_id & is.na(hotels$coord_x)
+  )
+  if (length(uncached_miss_idx) > 0) {
+    cat(sprintf("Geocoding %d uncached establishments with missing coordinates...\n",
+        length(uncached_miss_idx)))
+    new_geo_x <- rep(NA_real_, length(uncached_miss_idx))
+    new_geo_y <- rep(NA_real_, length(uncached_miss_idx))
+    for (i in seq_along(uncached_miss_idx)) {
+      row <- hotels[uncached_miss_idx[i], ]
+      if (i %% 50 == 1)
+        cat(sprintf("  Geocoding %d / %d ...\n", i, length(uncached_miss_idx)))
+      coords <- geocode_swisstopo(row$name, row$adresse, row$gemeinde)
+      if (!is.na(coords[1]) &&
+          (coords[1] < 2480000 | coords[1] > 2830000 |
+           coords[2] < 1070000 | coords[2] > 1300000)) {
+        coords <- c(NA_real_, NA_real_)
+      }
+      new_geo_x[i] <- coords[1]
+      new_geo_y[i] <- coords[2]
+    }
+    new_cache_rows <- data.frame(
+      hotel_id    = hotels$hotel_id[uncached_miss_idx],
+      coord_x_geo = new_geo_x,
+      coord_y_geo = new_geo_y
+    )
+    geocode_cache <- rbind(geocode_cache, new_cache_rows)
+    write.csv(geocode_cache, CACHE_FILE, row.names = FALSE)
+    cat(sprintf("Cache updated: %d total entries.\n\n", nrow(geocode_cache)))
+  }
 
 } else {
   cat("Geocoding hotels with missing coordinates via swisstopo API...\n")
@@ -182,9 +214,9 @@ hotels <- hotels %>%
   ) %>%
   select(-coord_x_geo, -coord_y_geo)
 
-cat(sprintf("Hotels with coords after geocoding: %d / %d\n",
+cat(sprintf("Establishments with coords after geocoding: %d / %d\n",
     sum(!is.na(hotels$coord_x)), nrow(hotels)))
-cat(sprintf("Hotels still without coords (will use nearest zone fallback in part2): %d\n\n",
+cat(sprintf("Establishments still without coords (will use nearest zone fallback in part2): %d\n\n",
     sum(is.na(hotels$coord_x))))
 
 # =============================================================================
@@ -240,7 +272,7 @@ hotels_clean <- hotels %>%
     name              = name,
     x                 = coord_x,
     y                 = coord_y,
-    accommodation_type = "Hotel",          # all rows are betriebsart == "Hotel"
+    accommodation_type = betriebsart,
     stars             = stars,
     nights_germany    = nights_germany,
     nights_france     = nights_france,
@@ -266,8 +298,7 @@ cat(sprintf("Hotels with valid coordinates: %d / %d\n\n",
 
 cat("=== Gaps between HESTA data and Danalet et al. (2023) requirements ===\n\n")
 cat("[MISSING] Person-level attributes: HESTA is aggregate (hotel × nationality).\n")
-cat("  Paper uses: party_size, trip duration per individual → modelled as\n")
-cat("  invented parameters (Poisson draws) in part2_tourist_population.R.\n\n")
+cat("  Each row in persons.csv represents one overnight stay, not one individual.\n\n")
 cat("[MISSING] Entry mode to Switzerland (means_of_transport_to_CH).\n")
 cat("  Paper's mode variable refers to in-Switzerland transport, not entry.\n")
 cat("  TMS 2017 has this; it feeds part1 estimation only, not hotel data.\n\n")

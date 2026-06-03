@@ -25,8 +25,10 @@
 # Run next: part3_mode_assignment.R
 # =============================================================================
 
-# [INVENTED PARAMETER] SCALE_FACTOR = 0.01: 1 synthetic agent per 100 hotel nights.
-# Adjust upward (e.g. 0.1) for more agents or downward for faster runs.
+# SCALE_FACTOR: controls population thinning for computational convenience in Part 4's
+# agent loop. Set to 0.01 (1 agent per 100 overnight stays) by default. The Python
+# pipeline uses 1:1 (no thinning); Part 5 weights each agent by 1/SCALE_FACTOR to
+# restore correct totals in OD matrices. Increase toward 1.0 for higher precision.
 
 # [ASSUMPTION] Hotel zone is the tourist's excursion ORIGIN (replaces residential
 # home zone from Scherr et al.). Tourists start each excursion from their hotel.
@@ -41,23 +43,21 @@ library(sf)
 
 set.seed(42)
 
-SCALE_FACTOR <- 0.01   # [INVENTED PARAMETER]
+SCALE_FACTOR <- 0.01   # computational thinning: 1 agent per 100 overnight stays
 
 # =============================================================================
 # RUNTIME FLAGS
 # =============================================================================
 
-message("[INVENTED PARAMETER – Part 2] SCALE_FACTOR = ", SCALE_FACTOR,
-        " (1 synthetic agent per ", round(1 / SCALE_FACTOR), " hotel nights).")
+message("[NOTE – Part 2] SCALE_FACTOR = ", SCALE_FACTOR,
+        " (1 agent per ", round(1 / SCALE_FACTOR), " overnight stays).",
+        " Computational thinning for Part 4 loop. Part 5 reweights by 1/SCALE_FACTOR.")
+message("[NOTE – Part 2] Age drawn from TMS distribution (17 bins, 18–98 in 5-year steps).",
+        " Probabilities and age_cat mapping taken directly from the Python pipeline.")
 message("[ASSUMPTION – Part 2] Hotel x/y (LV95) is joined to AMR regions via",
         " sf spatial join; nearest-centroid fallback used if join fails.")
 message("[ASSUMPTION – Part 2] All hotel tourists are assigned purpose = 'leisure'.",
         " Business tourists in hotels are not distinguished from the hotel data.")
-message("[INVENTED PARAMETER – Part 2] n_nights per agent drawn from",
-        " Poisson(mean = hotel_nights / n_agents_from_hotel). Replace with TMS",
-        " marginals once available.")
-message("[INVENTED PARAMETER – Part 2] party_size drawn from Poisson(lambda)",
-        " segmented by nationality group. Replace with TMS marginals.")
 
 # =============================================================================
 # 1. LOAD PART 1 OUTPUTS AND HOTEL DATA
@@ -75,7 +75,10 @@ if (!file.exists(HOTEL_FILE))
        "\n  Run prepare_hotel_data.R first to generate hotels_clean.csv from PASTA_HESTA.xlsx.")
 
 hotels_raw <- read.csv(HOTEL_FILE, stringsAsFactors = FALSE)
-cat(sprintf("Loaded %d hotels from %s.\n\n", nrow(hotels_raw), HOTEL_FILE))
+cat(sprintf("Loaded %d establishments from %s.\n", nrow(hotels_raw), HOTEL_FILE))
+cat("Accommodation type breakdown:\n")
+print(table(hotels_raw$accommodation_type, useNA = "ifany"))
+cat("\n")
 
 # =============================================================================
 # 2. RESHAPE TO LONG FORMAT: hotel × nationality → n_nights
@@ -181,25 +184,57 @@ cat(sprintf("Hotel → zone mapping complete. %d unique hotel zones.\n\n",
 # 4. EXPAND TO SYNTHETIC AGENTS
 # =============================================================================
 
-# [INVENTED PARAMETER] party_size lambda by nationality group
-party_size_lambda <- c(
-  germany      = 2.1,
-  france       = 2.3,
-  italy        = 2.5,
-  uk           = 2.0,
-  netherlands  = 2.2,
-  usa          = 2.4,
-  switzerland  = 1.9,
-  rest_of_world = 2.2
+# Accommodation type: maps HESTA betriebsart values to the 4-category factor
+# used in Part 1's extended coef_table (reference = "hotel").
+# [INVENTED PARAMETER] Category mapping for non-hotel types reflects HESTA
+# betriebsart labels; holiday_home is absent from HESTA and assigned to any
+# betriebsart not matching the other three categories.
+# Replace mapping when finer TMS sub-codes become available.
+ACCOM_TYPE_MAP <- c(
+  "Hotel"       = "hotel",
+  "Camping"     = "camping",
+  "Kurbetriebe" = "collective"
 )
 
-# Accommodation binary: TMS 2017 has only two categories:
-#   1 = hotel, 0 = supplementary accommodation.
-# Map hotel CSV accommodation_type to this binary.
-# [ASSUMPTION] Any accommodation_type labelled "hotel" maps to TMS hotel=1;
-# all others (hostel, airbnb, camping, chalet, b&b, etc.) map to supplementary=0.
-# Adjust the left-hand values below to match the actual strings in your hotels.csv.
-HOTEL_TYPE_LABELS <- c("hotel", "Hotel", "HOTEL")   # strings that map to hotel=1
+map_accom_type <- function(betriebsart) {
+  mapped <- ACCOM_TYPE_MAP[betriebsart]
+  mapped[is.na(mapped)] <- "holiday_home"   # fallback for unknown betriebsart values
+  unname(mapped)
+}
+
+# Age distribution from TMS (Tourismus Monitor Schweiz).
+# Taken directly from the Python pipeline (distribute_tourists_in_tourist_accommodation.py).
+# Ages are 5-year bin midpoints: 18, 23, ..., 98.
+AGE_BINS <- seq(18L, 98L, by = 5L)
+
+AGE_PROBS <- c(
+  0.030929457494933546,   # 18
+  0.097119341077536900,   # 23
+  0.125549804783617380,   # 28
+  0.113448342032605720,   # 33
+  0.101594693765626050,   # 38
+  0.103064934974812130,   # 43
+  0.101212743841690250,   # 48
+  0.101859678674628290,   # 53
+  0.079836002464638620,   # 58
+  0.068277081782321750,   # 63
+  0.044943030334914605,   # 68
+  0.021272053150429220,   # 73
+  0.008042705403412684,   # 78
+  0.002263171845485889,   # 83
+  0.000170148085542497,   # 88
+  0.000144955528486629,   # 93
+  0.000271854759317744    # 98
+)
+
+# age_cat: 2 = 18–27, 3 = 28–47, 4 = 48–67, 5 = 68–77, 6 = 78+
+AGE_CAT_MAP <- c(
+  "18" = 2L, "23" = 2L,
+  "28" = 3L, "33" = 3L, "38" = 3L, "43" = 3L,
+  "48" = 4L, "53" = 4L, "58" = 4L, "63" = 4L,
+  "68" = 5L, "73" = 5L,
+  "78" = 6L, "83" = 6L, "88" = 6L, "93" = 6L, "98" = 6L
+)
 
 hotels_with_zones <- hotels_long %>%
   left_join(zone_join, by = "hotel_id") %>%
@@ -210,50 +245,57 @@ hotels_with_zones <- hotels_long %>%
   # Ensure urban_rural column always exists; NA → treated as urban in coalesce below
   { if (!"urban_rural" %in% names(.)) dplyr::mutate(., urban_rural = NA_integer_) else . }
 
+cat(sprintf("Accommodation type mapping: %s\n",
+    paste(names(ACCOM_TYPE_MAP), ACCOM_TYPE_MAP, sep = " → ", collapse = ", ")))
 cat("Expanding to synthetic agents...\n")
 
 tourist_pop <- hotels_with_zones %>%
-  rowwise() %>%
   mutate(
-    n_agents = max(1L, round(n_nights_hotel * SCALE_FACTOR))
+    n_agents = pmax(1L, as.integer(round(n_nights_hotel * SCALE_FACTOR)))
   ) %>%
-  ungroup() %>%
   # Repeat each row n_agents times
   tidyr::uncount(n_agents, .id = "agent_seq") %>%
   mutate(
-    agent_id = row_number(),
-    # n_nights: Poisson draw per agent [INVENTED PARAMETER]
-    n_nights = pmax(1L, rpois(n(), lambda = pmax(1, n_nights_hotel * SCALE_FACTOR))),
-    # party_size: Poisson draw per nationality group [INVENTED PARAMETER]
-    party_size = pmax(1L, rpois(n(), lambda = party_size_lambda[nationality_group])),
-    # Accommodation binary: 1=hotel, 0=supplementary [ASSUMPTION]
-    # Matches TMS 2017 accomodation coding used in Part 1 estimation.
-    accom_hotel = as.integer(accommodation_type %in% HOTEL_TYPE_LABELS),
+    agent_id   = row_number(),
+    # Each agent represents 1/SCALE_FACTOR overnight stays
+    n_nights   = pmax(1L, rpois(n(), lambda = pmax(1, n_nights_hotel * SCALE_FACTOR))),
+    # Accommodation type factor: hotel (reference), camping, holiday_home, collective
+    # [INVENTED PARAMETER] mapping — replace when finer TMS sub-codes available
+    accom_type         = map_accom_type(accommodation_type),
+    accom_camping      = as.integer(accom_type == "camping"),
+    accom_holiday_home = as.integer(accom_type == "holiday_home"),
+    accom_collective   = as.integer(accom_type == "collective"),
+    # Age: drawn from TMS distribution (same probabilities as Python pipeline)
+    age     = sample(AGE_BINS, n(), replace = TRUE, prob = AGE_PROBS),
+    age_cat = as.integer(AGE_CAT_MAP[as.character(age)]),
     # Urban binary: default 1 (urban) if zone info not available from shapefile
-    urban = as.integer(coalesce(urban_rural, 1L) >= 1L),
+    urban      = as.integer(coalesce(urban_rural, 1L) >= 1L),
     # Purpose: leisure (all hotel tourists) [ASSUMPTION]
-    purpose = "leisure",
+    purpose    = "leisure",
     # Excursion origin = hotel zone [ASSUMPTION – A-6]
     excursion_zone = hotel_zone
   ) %>%
   select(agent_id, hotel_id, excursion_zone, nationality_group,
-         accom_hotel, stars, n_nights, party_size, urban, purpose)
+         accom_type, accom_camping, accom_holiday_home, accom_collective,
+         stars, n_nights, age, age_cat, urban, purpose)
 
 cat(sprintf("Synthetic population: %d agents.\n", nrow(tourist_pop)))
-cat(sprintf("Expected ≈ %d (= total nights × SCALE_FACTOR = %d × %.2f).\n\n",
+cat(sprintf("Expected ≈ %d (= total nights × SCALE_FACTOR = %d × %.2f).\n",
     round(sum(hotels_long$n_nights_hotel) * SCALE_FACTOR),
     sum(hotels_long$n_nights_hotel), SCALE_FACTOR))
+cat("Accommodation type distribution:\n")
+print(table(tourist_pop$accom_type, useNA = "ifany"))
+cat("\n")
 
 # Summary
 cat("=== Population Summary ===\n")
 cat("Nationality group distribution:\n")
 print(table(tourist_pop$nationality_group))
-cat("\nAccommodation (hotel=1, supplementary=0):\n")
-print(table(tourist_pop$accom_hotel))
-cat(sprintf("\nMean n_nights : %.1f  [replace with TMS marginals]\n",
-    mean(tourist_pop$n_nights)))
-cat(sprintf("Mean party_size: %.1f  [replace with TMS marginals]\n\n",
-    mean(tourist_pop$party_size)))
+cat("\nAccommodation type (hotel = reference in MNL):\n")
+print(table(tourist_pop$accom_type))
+cat(sprintf("\nAge distribution (mean = %.1f):\n", mean(tourist_pop$age)))
+print(table(tourist_pop$age_cat))
+cat("\n")
 
 # =============================================================================
 # 5. SAVE

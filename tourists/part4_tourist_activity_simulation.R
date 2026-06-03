@@ -95,7 +95,7 @@ mnl_choice <- function(V) {
 #
 # Predicts the number of excursions a tourist makes per stay-day (0, 1, or 2).
 # [INVENTED PARAMETER] All beta values below. Paper does not model excursion frequency.
-# Variables used: nationality_group, accommodation_type, party_size.
+# Variables used: nationality_group.
 # =============================================================================
 
 tourist_excursion_freq <- function(agent) {
@@ -110,13 +110,9 @@ tourist_excursion_freq <- function(agent) {
     switzerland  = 0.10,
     rest_of_world = 0.15
   )
-  # accom_hotel is binary (1=hotel, 0=supplementary); TMS has only these two.
-  accom_bonus <- if (isTRUE(agent$accom_hotel == 1L)) 0.00 else 0.05  # [INVENTED PARAMETER]
-  party_n <- log1p(agent$party_size)
-
   V0 <- 0
-  V1 <- -0.30 + nat_bonus + accom_bonus + 0.05 * party_n   # [INVENTED PARAMETER]
-  V2 <- -2.00 + nat_bonus + accom_bonus - 0.20 * party_n   # [INVENTED PARAMETER]
+  V1 <- -0.30 + nat_bonus   # [INVENTED PARAMETER]
+  V2 <- -2.00 + nat_bonus   # [INVENTED PARAMETER]
 
   mnl_choice(c("0" = V0, "1" = V1, "2" = V2))
 }
@@ -130,11 +126,9 @@ tourist_excursion_freq <- function(agent) {
 # =============================================================================
 
 tourist_stop_freq <- function(agent, n_excursions) {
-  party_n <- log1p(agent$party_size)
-
   V0 <- 0
-  V1 <- -0.50 + 0.10 * party_n - 0.20 * n_excursions   # [INVENTED PARAMETER]
-  V2 <- -1.80 - 0.10 * party_n - 0.40 * n_excursions   # [INVENTED PARAMETER]
+  V1 <- -0.50 - 0.20 * n_excursions   # [INVENTED PARAMETER]
+  V2 <- -1.80 - 0.40 * n_excursions   # [INVENTED PARAMETER]
 
   mnl_choice(c("0" = V0, "1" = V1, "2" = V2))
 }

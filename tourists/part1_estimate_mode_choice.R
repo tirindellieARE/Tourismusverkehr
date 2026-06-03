@@ -559,6 +559,62 @@ coef_table <- broom::tidy(mnl_model) %>%
     alt   = sub(".*:", "", term)    # alternative code, e.g. "1", "2", "3"
   )
 
+# =============================================================================
+# 7b. ACCOMMODATION TYPE EXTENSION — INVENTED COEFFICIENTS
+#
+# [INVENTED PARAMETER] TMS 2017 as available here has only a binary
+# hotel / supplementary variable (accomodation == 1). The paper uses a finer
+# Q16_bereinigt_final_aggregiert with 4 sub-categories. The three sets of
+# coefficients below are invented placeholders for:
+#   accom_camping      : camping tourists (HESTA "Camping", PASTA campsites)
+#   accom_holiday_home : holiday home tourists (PASTA holiday_homes)
+#   accom_collective   : health/spa establishment tourists (HESTA "Kurbetriebe",
+#                        PASTA collective_accommodation)
+# Reference category   : hotel (all three dummies = 0).
+# All estimates are relative to car (REF_ALT = "3").
+# Negative estimate → fewer tourists of that accom type choose that mode
+# relative to car, compared with hotel tourists.
+# Replace with estimated values once finer TMS sub-codes are available.
+# =============================================================================
+
+NON_REF_ALTS <- setdiff(ALT_CODES, REF_ALT)  # "1","2","6","7","8","9"
+
+invented_accom_coefs <- tibble::tribble(
+  ~term,                     ~estimate, ~std_error, ~t_stat, ~p.value,
+  # accom_camping: camping tourists are stronger car users than hotel tourists
+  "accom_camping:1",          -0.50,    NA_real_,  NA_real_, NA_real_,  # train
+  "accom_camping:2",          -0.30,    NA_real_,  NA_real_, NA_real_,  # bus
+  "accom_camping:6",          -0.40,    NA_real_,  NA_real_, NA_real_,  # long-dist bus
+  "accom_camping:7",          -0.80,    NA_real_,  NA_real_, NA_real_,  # tour bus
+  "accom_camping:8",           0.20,    NA_real_,  NA_real_, NA_real_,  # bicycle
+  "accom_camping:9",          -0.20,    NA_real_,  NA_real_, NA_real_,  # other
+  # accom_holiday_home: moderate car preference, weaker than camping
+  "accom_holiday_home:1",     -0.20,    NA_real_,  NA_real_, NA_real_,
+  "accom_holiday_home:2",     -0.15,    NA_real_,  NA_real_, NA_real_,
+  "accom_holiday_home:6",     -0.20,    NA_real_,  NA_real_, NA_real_,
+  "accom_holiday_home:7",     -0.50,    NA_real_,  NA_real_, NA_real_,
+  "accom_holiday_home:8",      0.10,    NA_real_,  NA_real_, NA_real_,
+  "accom_holiday_home:9",     -0.10,    NA_real_,  NA_real_, NA_real_,
+  # accom_collective: health/spa resorts — close to hotel; tour bus more common
+  "accom_collective:1",       -0.10,    NA_real_,  NA_real_, NA_real_,
+  "accom_collective:2",       -0.05,    NA_real_,  NA_real_, NA_real_,
+  "accom_collective:6",       -0.10,    NA_real_,  NA_real_, NA_real_,
+  "accom_collective:7",        0.20,    NA_real_,  NA_real_, NA_real_,
+  "accom_collective:8",       -0.05,    NA_real_,  NA_real_, NA_real_,
+  "accom_collective:9",       -0.05,    NA_real_,  NA_real_, NA_real_
+) %>%
+  mutate(
+    param = sub(":.*", "", term),
+    alt   = sub(".*:", "", term)
+  )
+
+coef_table <- dplyr::bind_rows(coef_table, invented_accom_coefs)
+
+message("[INVENTED PARAMETER – Part 1] Accommodation type extended to 4 categories ",
+        "(hotel / camping / holiday_home / collective). Coefficients for camping, ",
+        "holiday_home and collective are invented placeholders — NA std_error and t_stat. ",
+        "Replace with estimated values when finer TMS accommodation sub-codes are available.")
+
 cat("=== Model Summary ===\n")
 cat(sprintf("Observations         : %d  [Paper: 12,809  — should match exactly]\n", n_obs))
 cat(sprintf("Alternatives         : %d\n", n_alts))

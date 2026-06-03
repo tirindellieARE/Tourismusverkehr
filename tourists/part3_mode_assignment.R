@@ -90,9 +90,14 @@ compute_utilities <- function(agent, coef_table, alt_codes, ref_alt) {
     urb_row <- coef_table[coef_table$term == paste0("urban:", a), ]
     if (nrow(urb_row) > 0) V[a] <- V[a] + urb_row$estimate[1] * agent$urban
 
-    # Accommodation: term is "accom_hotel:<alt>"
-    accom_row <- coef_table[coef_table$term == paste0("accom_hotel:", a), ]
-    if (nrow(accom_row) > 0) V[a] <- V[a] + accom_row$estimate[1] * agent$accom_hotel
+    # Accommodation type dummies (reference = hotel; all three = 0 for hotel tourists).
+    # Coefficients for camping/holiday_home/collective are invented placeholders —
+    # see Part 1 section 7b. Replace when finer TMS sub-codes are available.
+    for (accom_var in c("accom_camping", "accom_holiday_home", "accom_collective")) {
+      accom_row <- coef_table[coef_table$term == paste0(accom_var, ":", a), ]
+      if (nrow(accom_row) > 0)
+        V[a] <- V[a] + accom_row$estimate[1] * agent[[accom_var]]
+    }
 
     # [ASSUMPTION] No LOS skims: travel_time / travel_cost contribute 0.
     # When LOS data is added, look up "travel_time" and "travel_cost" (generic
