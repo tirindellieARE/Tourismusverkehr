@@ -73,10 +73,11 @@ library(tibble)
 library(broom)
 
 set.seed(42)
-which_computer = "MR1"
+which_computer = "CP"
 
 if(which_computer == "MR1"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(which_computer == "mine"){setwd("")}
+if(which_computer == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/ScriptGit/tourists")}
 
 # =============================================================================
 # CONSTANTS

@@ -67,7 +67,8 @@ load("part1_output.RData")
 cat("Part 1 data loaded.\n")
 
 HOTEL_FILE  <- "data/hotels_clean.csv"   # produced by prepare_hotel_data.R
-ZONES_FILE  <- "data/amr_zones.gpkg"    # or .shp; must have zone_id column
+ZONES_FILE  <- "data/amr_zones.gpkg"
+COMMUNE_FILE  <- "data/communes.gpkg"
 
 # Run prepare_hotel_data.R first if hotels_clean.csv does not exist yet.
 if (!file.exists(HOTEL_FILE))
@@ -132,50 +133,40 @@ cat(sprintf("Total hotel nights across all nationalities: %d\n\n",
 # Build sf point layer from hotel coordinates (LV95 = EPSG:2056)
 hotels_sf <- hotels_long %>%
   distinct(hotel_id, x, y) %>%
+  filter(!is.na(x) & !is.na(y)) %>%
   st_as_sf(coords = c("x", "y"), crs = 2056)
 
 zone_join <- NULL
 
-if (file.exists(ZONES_FILE)) {
-  cat("Joining hotels to AMR zones via", ZONES_FILE, "...\n")
-  zones_sf <- st_read(ZONES_FILE, quiet = TRUE) %>%
-    st_transform(2056)
+cat("Joining hotels to AMR zones via", ZONES_FILE, "...\n")
+zones_sf <- st_read(ZONES_FILE, quiet = TRUE) %>%
+  st_transform(2056)
+names(zones_sf) = c("zone_name", "zone_id", "geometry")
 
-  joined <- st_join(hotels_sf, zones_sf["zone_id"], left = TRUE)
+joined <- st_join(hotels_sf, zones_sf, left = TRUE)
 
-  # Fallback: nearest zone centroid for hotels that missed the spatial join
-  n_miss <- sum(is.na(joined$zone_id))
-  if (n_miss > 0) {
-    # [ASSUMPTION – A-1] Nearest-centroid fallback
-    message("[ASSUMPTION – Part 2] ", n_miss,
-            " hotels not covered by AMR polygons; assigning nearest zone centroid.")
-    centroids <- st_centroid(zones_sf)
-    miss_idx  <- which(is.na(joined$zone_id))
-    nearest   <- st_nearest_feature(hotels_sf[miss_idx, ], centroids)
-    joined$zone_id[miss_idx] <- zones_sf$zone_id[nearest]
-  }
-
-  zone_join <- as.data.frame(joined) %>%
-    select(hotel_id, hotel_zone = zone_id)
-
-  # Zone attributes (urban/rural) from zone layer
-  zone_attrs <- as.data.frame(zones_sf) %>%
-    select(zone_id, any_of(c("urban_rural", "region_label", "amr_name")))
-  if (!"urban_rural" %in% names(zone_attrs)) {
-    message("[ASSUMPTION – Part 2] 'urban_rural' column not found in AMR shapefile.",
-            " Defaulting all zones to urban = 1.")
-    zone_attrs$urban_rural <- 1L
-  }
-
-} else {
-  message("[ASSUMPTION – Part 2] AMR zone file not found at ", ZONES_FILE,
-          ". Assigning hotel_zone = hotel_id as placeholder; urban = 1.")
-  zone_join  <- data.frame(hotel_id = hotels_sf$hotel_id,
-                            hotel_zone = hotels_sf$hotel_id)
-  zone_attrs <- data.frame(zone_id = unique(hotels_sf$hotel_id),
-                            urban_rural = 1L,
-                            region_label = "unknown")
+# Fallback: nearest zone centroid for hotels that missed the spatial join
+n_miss <- sum(is.na(joined$zone_id))
+if (n_miss > 0) {
+  # [ASSUMPTION – A-1] Nearest-centroid fallback
+  message("[ASSUMPTION – Part 2] ", n_miss,
+          " hotels not covered by AMR polygons; assigning nearest zone centroid.")
+  centroids <- st_centroid(zones_sf)
+  miss_idx  <- which(is.na(joined$zone_id))
+  nearest   <- st_nearest_feature(hotels_sf[miss_idx, ], centroids)
+  joined$zone_id[miss_idx] <- zones_sf$zone_id[nearest]
 }
+
+
+communes_sf <- st_read(COMMUNES_FILE, quiet = TRUE) %>%
+  st_transform(2056)
+communes_sf = communes_sf[c("GDENAME", "STALAN2020", "STALAN2020_fr", "geometry")]
+names(communes_sf) = c("name", "urban_rural_topology", "urban_rural_topology_char","geometry")
+
+joined <- st_join(joined, communes_sf, left = TRUE)
+
+zone_join <- as.data.frame(joined) %>%
+  select(hotel_id, hotel_zone = zone_id, urban_rural_topology, zone_name)
 
 cat(sprintf("Hotel → zone mapping complete. %d unique hotel zones.\n\n",
     length(unique(zone_join$hotel_zone))))
@@ -237,14 +228,9 @@ AGE_CAT_MAP <- c(
 )
 
 hotels_with_zones <- hotels_long %>%
-  left_join(zone_join, by = "hotel_id") %>%
-  left_join(
-    zone_attrs %>% rename(hotel_zone = zone_id),
-    by = "hotel_zone"
-  ) %>%
-  # Ensure urban_rural column always exists; NA → treated as urban in coalesce below
-  { if (!"urban_rural" %in% names(.)) dplyr::mutate(., urban_rural = NA_integer_) else . }
-
+  left_join(zone_join, by = "hotel_id") %>% 
+  rename(hotel_zone = zone_id) %>%
+ na.omit
 cat(sprintf("Accommodation type mapping: %s\n",
     paste(names(ACCOM_TYPE_MAP), ACCOM_TYPE_MAP, sep = " → ", collapse = ", ")))
 cat("Expanding to synthetic agents...\n")
@@ -269,7 +255,8 @@ tourist_pop <- hotels_with_zones %>%
     age     = sample(AGE_BINS, n(), replace = TRUE, prob = AGE_PROBS),
     age_cat = as.integer(AGE_CAT_MAP[as.character(age)]),
     # Urban binary: default 1 (urban) if zone info not available from shapefile
-    urban      = as.integer(coalesce(urban_rural, 1L) >= 1L),
+    urban      = as.integer(urban_rural_topology == 1),
+    rural      = as.integer(urban_rural_topology == 2),
     # Purpose: leisure (all hotel tourists) [ASSUMPTION]
     purpose    = "leisure",
     # Excursion origin = hotel zone [ASSUMPTION – A-6]
