@@ -17,12 +17,8 @@ agqpv = na.omit(agqpv)
 # set scaling factor for computational reasons
 SCALING_FACTOR = 1000
 
-set.seed(1)
-w = agqpv$weight/SCALING_FACTOR
-reps = floor(w) + (runif(length(w)) < (w - floor(w)))
-agents = agqpv[rep(1:.N, reps)]
 
-agents[, border_mode_label := dplyr::case_when(
+agqpv[, border_mode_label := dplyr::case_when(
   border_mode == 1 ~ "road",
   border_mode == 2 ~ "rail",
   TRUE             ~ "unknown"
@@ -56,31 +52,31 @@ assign_zones <- function(lon, lat, zones) {
   joined$NO
 }
 
-agents[, origin_zone    := assign_zones(origin_long,    origin_lat,    zones_sf)]
-agents[, dest_zone      := assign_zones(dest_long,      dest_lat,      zones_sf)]
-agents[, residence_zone := assign_zones(residence_long, residence_lat, zones_sf)]
+agqpv[, origin_zone    := assign_zones(origin_long,    origin_lat,    zones_sf)]
+agqpv[, dest_zone      := assign_zones(dest_long,      dest_lat,      zones_sf)]
+agqpv[, residence_zone := assign_zones(residence_long, residence_lat, zones_sf)]
 
 # Summary of unmatched points per coordinate type
 cat(sprintf(
-  "Zone match summary (out of %d agents):\n  origin_zone    unmatched: %d (%.1f%%)\n  dest_zone      unmatched: %d (%.1f%%)\n  residence_zone unmatched: %d (%.1f%%)\n",
-  nrow(agents),
-  sum(is.na(agents$origin_zone)),    100 * mean(is.na(agents$origin_zone)),
-  sum(is.na(agents$dest_zone)),      100 * mean(is.na(agents$dest_zone)),
-  sum(is.na(agents$residence_zone)), 100 * mean(is.na(agents$residence_zone))
+  "Zone match summary (out of %d obs):\n  origin_zone    unmatched: %d (%.1f%%)\n  dest_zone      unmatched: %d (%.1f%%)\n  residence_zone unmatched: %d (%.1f%%)\n",
+  nrow(agqpv),
+  sum(is.na(agqpv$origin_zone)),    100 * mean(is.na(agqpv$origin_zone)),
+  sum(is.na(agqpv$dest_zone)),      100 * mean(is.na(agqpv$dest_zone)),
+  sum(is.na(agqpv$residence_zone)), 100 * mean(is.na(agqpv$residence_zone))
 ))
 
-if (any(is.na(agents$residence_zone))) {
-  cat("Nationality breakdown of agents with unmatched residence zone:\n")
-  print(table(agents[is.na(residence_zone), nationality]))
+if (any(is.na(agqpv$residence_zone))) {
+  cat("Nationality breakdown of obs with unmatched residence zone:\n")
+  print(table(agqpv[is.na(residence_zone), nationality]))
 }
 
-if (any(is.na(agents$origin_zone))) {
-  cat("Nationality breakdown of agents with unmatched origin zone:\n")
-  print(table(agents[is.na(origin_zone), nationality]))
+if (any(is.na(agqpv$origin_zone))) {
+  cat("Nationality breakdown of obs with unmatched origin zone:\n")
+  print(table(agqpv[is.na(origin_zone), nationality]))
 }
 
 # Check: every destination point must fall inside a transit zone
-n_dest_missing <- sum(is.na(agents$dest_zone))
+n_dest_missing <- sum(is.na(agqpv$dest_zone))
 if (n_dest_missing > 0) {
   stop(sprintf(
     "%d destination point(s) could not be matched to any transit zone. ",
@@ -89,14 +85,20 @@ if (n_dest_missing > 0) {
   ))
 }
 cat(sprintf(
-  "Zone assignment complete: %d agents, all destination points matched a transit zone.\n",
-  nrow(agents)
+  "Zone assignment complete: %d obs, all destination points matched a transit zone.\n",
+  nrow(agqpv)
 ))
 
 # Add destination zone urban/rural topology from zones_communes
 zone_topology <- as.data.table(unique(st_drop_geometry(zones_sf)[, c("NO", "STALAN2020")]))
-agents <- zone_topology[agents, on = c(NO = "dest_zone")]
-setnames(agents, c("NO", "STALAN2020"), c("dest_zone", "dest_zone_topology"))
+agqpv <- zone_topology[agqpv, on = c(NO = "dest_zone")]
+setnames(agqpv, c("NO", "STALAN2020"), c("dest_zone", "dest_zone_topology"))
+fwrite(agqpv, "data/agqpv.csv")
+
+set.seed(1)
+w = agqpv$weight/SCALING_FACTOR
+reps = floor(w) + (runif(length(w)) < (w - floor(w)))
+agents = agqpv[rep(1:.N, reps)]
 
 agents[, agent_id := .I]
 fwrite(agents, "data/agents.csv")
