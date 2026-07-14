@@ -10,7 +10,8 @@ N_AGENTS <- 1000
 SEED     <- 42
 
 # --- Load base data ---
-agents   <- fread("data/agents.csv")
+agents   <- fread("data/agqpv.csv")
+agents[, agent_id := .I]
 zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO

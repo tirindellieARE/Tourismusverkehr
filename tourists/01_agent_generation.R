@@ -1,7 +1,12 @@
 library(data.table)
 library(sf)
 
-raw = fread("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/data/AuGQPV_2015/Finale_Auswertungsdatenbank_AGQPV2015_V2.csv")
+user = "MR"
+if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
+if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/")}
+    
+
+raw = fread("data/Finale_Auswertungsdatenbank_AGQPV2015_V2.csv")
 agqpv= dplyr::filter(raw, STARTORTLANDISO != "CH")
 agqpv= dplyr::filter(agqpv, ZIELORTLAND == 1)
 agqpv= dplyr::filter(agqpv, FAHRTZWECK == 5)
@@ -13,9 +18,6 @@ new_names = c("grenz", "nationality", "residence_lat", "residence_long", "origin
               "dest_lat", "dest_long", "n_nights", "border_mode", "weight")
 names(agqpv) = new_names
 agqpv = na.omit(agqpv)
-
-# set scaling factor for computational reasons
-SCALING_FACTOR = 1000
 
 
 agqpv[, border_mode_label := dplyr::case_when(
@@ -94,6 +96,9 @@ zone_topology <- as.data.table(unique(st_drop_geometry(zones_sf)[, c("NO", "STAL
 agqpv <- zone_topology[agqpv, on = c(NO = "dest_zone")]
 setnames(agqpv, c("NO", "STALAN2020"), c("dest_zone", "dest_zone_topology"))
 fwrite(agqpv, "data/agqpv.csv")
+
+# set scaling factor for computational reasons
+SCALING_FACTOR = 1000
 
 set.seed(1)
 w = agqpv$weight/SCALING_FACTOR

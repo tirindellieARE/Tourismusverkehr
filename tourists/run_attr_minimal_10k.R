@@ -5,8 +5,8 @@ suppressPackageStartupMessages({
   library(apollo)
 })
 
-N_ALTS   <- 300
-N_AGENTS <- 1000
+N_ALTS   <- 500
+N_AGENTS <- 10000
 SEED     <- 42
 
 # --- Load base data ---
@@ -43,11 +43,11 @@ for (col in attr_cols) {
   benz[, (col) := (get(col) - m) / s]
 }
 
-# --- Sample agents (same seed = same sample as model 2) ---
+# --- Sample agents ---
 set.seed(SEED)
 agents_sub <- agents_noswiss[sample(.N, N_AGENTS)]
 
-# --- Build alternative matrix (same seed) ---
+# --- Build alternative matrix ---
 alt_matrix <- matrix(sample(all_zones, N_AGENTS * N_ALTS, replace = TRUE),
                      nrow = N_AGENTS, ncol = N_ALTS)
 chosen_col <- sample(N_ALTS, N_AGENTS, replace = TRUE)
@@ -97,8 +97,8 @@ database <- as.data.frame(
 invisible(capture.output(apollo_initialise()))
 
 apollo_control <- list(
-  modelName       = "mnl_attr_minimal",
-  modelDescr      = "Minimal model: tt + topology + 6 attractivity vars, all x nationality",
+  modelName       = "mnl_attr_minimal_10k",
+  modelDescr      = "Minimal model: tt + topology + 6 attractivity vars, all x nationality (10k agents, 500 alts)",
   indivID         = "agent_id",
   outputDirectory = "output/"
 )
@@ -173,7 +173,7 @@ apollo_probabilities <- function(apollo_beta, apollo_inputs, functionality = "es
   return(P)
 }
 
-cat(sprintf("Running minimal MNL: %d agents, %d alts, %d free params\n",
+cat(sprintf("Running minimal MNL (10k): %d agents, %d alts, %d free params\n",
             N_AGENTS, N_ALTS, length(apollo_beta)))
 
 model <- apollo_estimate(apollo_beta, apollo_fixed, apollo_probabilities, apollo_inputs)
@@ -186,5 +186,5 @@ est <- data.table(
   rho2     = model$rho2_0
 )
 est[, tstat := estimate / se]
-fwrite(est, "output/attr_minimal_results.csv")
+fwrite(est, "output/attr_minimal_10k_results.csv")
 cat(sprintf("Done  LL=%.4f  rho2=%.4f\n", model$LLout, model$rho2_0))

@@ -11,7 +11,8 @@ suppressPackageStartupMessages({
 N_ALTS   <- 100
 N_AGENTS <- 1000
 
-agents   <- fread("data/agents.csv")
+agents   <- fread("data/agqpv.csv")
+agents[, agent_id := .I]
 zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
 
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
