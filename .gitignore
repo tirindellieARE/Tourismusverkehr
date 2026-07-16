@@ -5,3 +5,9 @@
 tourists/data/MIV_KOS.omx
 tourists/data/tt_avg_lookup.rds
 tourists/data/tt_full_logsum.fst
+tourists/output/destination_mnl_tagesreise_v02_notopo_half_alts1000_model.rds
+tourists/output/destination_mnl_tagesreise_v02_notopo_half_alts5000_model.rds
+tourists/output/destination_mnl_reise_mit_ue_v02_notopo_half_alts1000_model.rds
+tourists/output/destination_mnl_reise_mit_ue_v02_notopo_half_alts5000_model.rds
+tourists/data/tt_full_logsum_reisemitue.fst
+tourists/data/tt_full_logsum_tagesreise.fst
