@@ -6,12 +6,12 @@ suppressPackageStartupMessages({
 })
 
 N_ALTS   <- 300
-N_AGENTS <- 1000
+N_AGENTS <- 10000
 SEED     <- 42
 
-agents   <- fread("data/agqpv.csv")
+agents   <- fread("data/output/agqpv.csv")
 agents[, agent_id := .I]
-zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO
 
@@ -23,9 +23,8 @@ agents_noswiss[, nat_group := fcase(
   default           = "other"
 )]
 
-tt_dt <- readRDS("data/tt_avg_lookup.rds")
+tt_dt <- readRDS("data/input/tt_avg_lookup.rds")
 
-# Only v02 population
 benz <- fread("../benzoni_thesis/output/attractivity_indexes.csv",
               select = c("npvm_id", "v02_resident_population_log1p"))
 m <- mean(benz$v02_resident_population_log1p)
@@ -76,14 +75,13 @@ database <- as.data.frame(
 invisible(capture.output(apollo_initialise()))
 
 apollo_control <- list(
-  modelName       = "mnl_baseline",
-  modelDescr      = "Baseline: tt + topology + population, all x nationality",
+  modelName       = "mnl_baseline_10k",
+  modelDescr      = "Baseline 10k: tt + topology + population, all x nationality",
   indivID         = "agent_id",
-  outputDirectory = "output/"
+  outputDirectory = "results_output/"
 )
 
 nats <- c("DE", "FR", "IT")
-
 apollo_beta <- c(
   setNames(rep(0, 3), paste0("beta_tt_",    nats)),
   setNames(rep(0, 6), c(paste0("beta_topo2_", nats), paste0("beta_topo3_", nats))),
@@ -128,7 +126,7 @@ apollo_probabilities <- function(apollo_beta, apollo_inputs, functionality = "es
   return(P)
 }
 
-cat(sprintf("Running baseline MNL: %d agents, %d alts, %d free params\n",
+cat(sprintf("Running baseline 10k MNL: %d agents, %d alts, %d free params\n",
             N_AGENTS, N_ALTS, length(apollo_beta)))
 
 model <- apollo_estimate(apollo_beta, apollo_fixed, apollo_probabilities, apollo_inputs)
@@ -141,5 +139,5 @@ est <- data.table(
   rho2     = model$rho2_0
 )
 est[, tstat := estimate / se]
-fwrite(est, "output/attr_baseline_results.csv")
+fwrite(est, "results_output/attr_baseline_10k_results.csv")
 cat(sprintf("Done  LL=%.4f  rho2=%.4f\n", model$LLout, model$rho2_0))

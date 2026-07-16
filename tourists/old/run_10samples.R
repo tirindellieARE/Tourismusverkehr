@@ -11,9 +11,9 @@ N_SAMPLES <- 10
 # 1. LOAD DATA (once)
 # =============================================================================
 
-agents   <- fread("data/agqpv.csv")
+agents   <- fread("data/output/agqpv.csv")
 agents[, agent_id := .I]
-zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO
@@ -27,7 +27,7 @@ agents_noswiss[, nat_group := fcase(
   default           = "other"
 )]
 
-tt_dt <- readRDS("data/tt_avg_lookup.rds")
+tt_dt <- readRDS("data/input/tt_avg_lookup.rds")
 cat("Data loaded.\n\n")
 
 # =============================================================================
@@ -130,7 +130,7 @@ for (s in seq_len(N_SAMPLES)) {
     modelName       = sprintf("mnl_sample%02d", s),
     modelDescr      = "MNL destination choice — OD travel time",
     indivID         = "agent_id",
-    outputDirectory = "output/",
+    outputDirectory = "results_output/",
     silent          = TRUE
   )
 
@@ -157,7 +157,7 @@ for (s in seq_len(N_SAMPLES)) {
   results[[s]] <- est
 
   # Write incrementally so results survive Apollo stdout hijacking
-  fwrite(est, "output/bootstrap_results.csv", append = (s > 1))
+  fwrite(est, "results_output/bootstrap_results.csv", append = (s > 1))
   cat(sprintf("  LL = %.4f\n", model$LLout))
 }
 
@@ -165,7 +165,7 @@ for (s in seq_len(N_SAMPLES)) {
 # 4. SUMMARY STATISTICS  (read from CSV in case stdout was hijacked)
 # =============================================================================
 
-all_results <- fread("output/bootstrap_results.csv")
+all_results <- fread("results_output/bootstrap_results.csv")
 cat("\n\n")
 cat("=================================================================\n")
 cat("SUMMARY STATISTICS ACROSS 10 SAMPLES (1000 agents each)\n")

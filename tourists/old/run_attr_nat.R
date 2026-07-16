@@ -10,9 +10,9 @@ N_AGENTS <- 1000
 SEED     <- 42
 
 # --- Load base data ---
-agents   <- fread("data/agqpv.csv")
+agents   <- fread("data/output/agqpv.csv")
 agents[, agent_id := .I]
-zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO
 
@@ -25,7 +25,7 @@ agents_noswiss[, nat_group := fcase(
   default           = "other"
 )]
 
-tt_dt <- readRDS("data/tt_avg_lookup.rds")
+tt_dt <- readRDS("data/input/tt_avg_lookup.rds")
 
 # --- Load attractivity indexes (log1p-transformed, from Benzoni et al. 2026) ---
 attr_cols <- c(
@@ -112,7 +112,7 @@ apollo_control <- list(
   modelName       = "mnl_attr_nat",
   modelDescr      = "MNL with attractivity indexes x nationality",
   indivID         = "agent_id",
-  outputDirectory = "output/"
+  outputDirectory = "results_output/"
 )
 
 # Travel time betas (other fixed at 0)
@@ -194,5 +194,5 @@ est <- data.table(
   final_ll = model$LLout,
   rho2     = model$rho2_0
 )
-fwrite(est, "output/attr_nat_results.csv")
+fwrite(est, "results_output/attr_nat_results.csv")
 cat(sprintf("Done  LL=%.4f  rho2=%.4f\n", model$LLout, model$rho2_0))

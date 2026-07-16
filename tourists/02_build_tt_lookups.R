@@ -19,8 +19,10 @@ suppressPackageStartupMessages({
   library(fst)
 })
 
-agqpv <- fread("data/agqpv.csv")
-zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+dir.create("data/output", recursive = TRUE, showWarnings = FALSE)
+
+agqpv <- fread("data/output/agqpv.csv")
+zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO)]
 all_zones  <- zone_attrs$NO
 
@@ -36,10 +38,10 @@ open_no <- function(path) {
   h$close_all()
   no
 }
-no_ttc  <- open_no("data/TTC.omx")
-no_rita <- open_no("data/RITA.omx")
-no_egt  <- open_no("data/EGT.omx")
-no_act  <- open_no("data/ACT.omx")
+no_ttc  <- open_no("data/input/TTC.omx")
+no_rita <- open_no("data/input/RITA.omx")
+no_egt  <- open_no("data/input/EGT.omx")
+no_act  <- open_no("data/input/ACT.omx")
 
 dest_zones <- all_zones[all_zones %in% no_ttc &
                          all_zones %in% no_rita &
@@ -53,10 +55,10 @@ ci_rita <- match(dest_zones, no_rita)
 ci_egt  <- match(dest_zones, no_egt)
 ci_act  <- match(dest_zones, no_act)
 
-h_ttc  <- H5File$new("data/TTC.omx",  mode = "r")
-h_rita <- H5File$new("data/RITA.omx", mode = "r")
-h_egt  <- H5File$new("data/EGT.omx",  mode = "r")
-h_act  <- H5File$new("data/ACT.omx",  mode = "r")
+h_ttc  <- H5File$new("data/input/TTC.omx",  mode = "r")
+h_rita <- H5File$new("data/input/RITA.omx", mode = "r")
+h_egt  <- H5File$new("data/input/EGT.omx",  mode = "r")
+h_act  <- H5File$new("data/input/ACT.omx",  mode = "r")
 
 missing_origin <- character(0)
 tt_list <- vector("list", length(orig_zones))
@@ -100,10 +102,10 @@ tt_light <- tt_full[pairs_needed, on = c("origin_zone", "dest_zone")]
 n_na <- sum(is.na(tt_light$tt_miv))
 if (n_na > 0) cat(sprintf("WARNING: %d/%d agqpv OD pairs missing from tt_full\n", n_na, nrow(tt_light)))
 
-write_fst(tt_full,  "data/tt_full.fst",  compress = 100)
-write_fst(tt_light, "data/tt_light.fst", compress = 100)
+write_fst(tt_full,  "data/output/tt_full.fst",  compress = 100)
+write_fst(tt_light, "data/output/tt_light.fst", compress = 100)
 
 cat(sprintf("\ntt_full.fst  : %d rows, %d origin zones -> %.2f MB\n",
-    nrow(tt_full), length(unique(tt_full$origin_zone)), file.size("data/tt_full.fst") / 1e6))
+    nrow(tt_full), length(unique(tt_full$origin_zone)), file.size("data/output/tt_full.fst") / 1e6))
 cat(sprintf("tt_light.fst : %d rows                    -> %.2f MB\n",
-    nrow(tt_light), file.size("data/tt_light.fst") / 1e6))
+    nrow(tt_light), file.size("data/output/tt_light.fst") / 1e6))

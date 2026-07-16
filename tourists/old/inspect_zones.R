@@ -1,7 +1,7 @@
 suppressPackageStartupMessages(library(sf))
 suppressPackageStartupMessages(library(data.table))
 
-z <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+z <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 dt <- as.data.table(st_drop_geometry(z))
 cat("Columns:", paste(names(dt), collapse = ", "), "\n")
 cat("Rows:", nrow(dt), "\n\n")

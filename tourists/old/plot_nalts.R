@@ -3,7 +3,7 @@ suppressPackageStartupMessages({
   library(ggplot2)
 })
 
-dt <- fread("output/nalts_n10000_results.csv")
+dt <- fread("results_output/nalts_n10000_results.csv")
 dt <- unique(dt, by = c("n_alts", "param"))
 dt <- dt[param != "beta_tt_other" & param != "beta_tt_FR"]
 
@@ -34,7 +34,7 @@ p1 <- ggplot(dt, aes(x = n_alts, y = estimate, colour = label, group = label)) +
   theme(legend.position = "bottom",
         panel.grid.minor = element_blank())
 
-ggsave("output/plot_coefficients_vs_nalts.png", p1,
+ggsave("results_output/plot_coefficients_vs_nalts.png", p1,
        width = 8, height = 7, dpi = 150)
 
 # --- Plot 2: % change relative to N_ALTS = 300 ---
@@ -59,7 +59,7 @@ p2 <- ggplot(pct, aes(x = n_alts, y = delta_pct, colour = label, group = label))
   theme(legend.position = "bottom",
         panel.grid.minor = element_blank())
 
-ggsave("output/plot_pctchange_vs_nalts.png", p2,
+ggsave("results_output/plot_pctchange_vs_nalts.png", p2,
        width = 8, height = 7, dpi = 150)
 
-cat("Saved:\n  output/plot_coefficients_vs_nalts.png\n  output/plot_pctchange_vs_nalts.png\n")
+cat("Saved:\n  results_output/plot_coefficients_vs_nalts.png\n  results_output/plot_pctchange_vs_nalts.png\n")

@@ -1,5 +1,5 @@
 suppressPackageStartupMessages(library(data.table))
-dt <- fread("output/nalts_n10000_results.csv")
+dt <- fread("results_output/nalts_n10000_results.csv")
 dt <- unique(dt, by = c("n_alts", "param"))
 dt <- dt[order(n_alts)]
 

@@ -8,7 +8,7 @@
 #
 # logsum_j = ln(exp(V_car) + exp(V_pt)), the inclusive value / expected-maximum-
 #            utility from the mode choice model estimated in
-#            03_prepare_choice_data.R (data/tt_full_logsum.fst). This replaces
+#            03_prepare_choice_data.R (data/output/tt_full_logsum.fst). This replaces
 #            a raw origin-destination travel time with the accessibility
 #            measure implied by the lower-level (mode) choice -- standard
 #            nested-logit practice (Ben-Akiva & Lerman / McFadden).
@@ -19,7 +19,7 @@
 # run_destination_model(n_agents, n_alts)  -- one estimation run, your choice
 #   of sample size and choice-set size.
 # run_destination_batch(n_agents_vec, n_alts_vec) -- runs several models and
-#   saves all of their estimates together under one output/destination_mnl_
+#   saves all of their estimates together under one results_output/destination_mnl_
 #   batch_<batch_id>.csv, tagged with a shared batch_id and a run_id per model.
 # =============================================================================
 
@@ -34,9 +34,9 @@ suppressPackageStartupMessages({
 # 1. LOAD DATA (shared across all runs)
 # =============================================================================
 
-agents   <- fread("data/agqpv.csv")
+agents   <- fread("data/output/agqpv.csv")
 agents[, agent_id := .I]
-zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO
@@ -55,7 +55,7 @@ NAT_LEVELS <- sort(unique(agents_noswiss$nat_group))
 cat(sprintf("Nationality groups: %s\n", paste(NAT_LEVELS, collapse = ", ")))
 print(agents_noswiss[, .N, by = nat_group][order(-N)])
 
-LOGSUM_CACHE <- "data/tt_full_logsum.fst"
+LOGSUM_CACHE <- "data/output/tt_full_logsum.fst"
 if (!file.exists(LOGSUM_CACHE)) {
   stop(sprintf(
     "%s not found. Run 03_prepare_choice_data.R first to estimate the mode choice model and build the logsum lookup.",
@@ -92,7 +92,7 @@ for (col in ATTR_COLS) {
 }
 cat(sprintf("Loaded %d attractivity indexes for %d zones\n\n", length(ATTR_COLS), nrow(benz)))
 
-dir.create("output", showWarnings = FALSE)
+dir.create("results_output", showWarnings = FALSE)
 invisible(capture.output(apollo_initialise()))
 
 # =============================================================================
@@ -217,7 +217,7 @@ run_destination_model <- function(n_agents, n_alts, attr_vars = character(0), se
                                if (length(attr_vars) > 0) paste0(", ", length(attr_vars), " attr x nat") else "",
                                n_agents, n_alts),
     indivID         = "agent_id",
-    outputDirectory = "output/"
+    outputDirectory = "results_output/"
   )
 
   beta_names <- paste0("beta_logsum_", NAT_LEVELS)
@@ -329,7 +329,7 @@ run_destination_batch <- function(n_agents_vec, n_alts_vec = 300, attr_vars = ch
   batch_dt <- rbindlist(all_estimates)
   setcolorder(batch_dt, c("batch_id", "run_id", setdiff(names(batch_dt), c("batch_id", "run_id"))))
 
-  out_file <- sprintf("output/destination_mnl_batch_%s.csv", batch_id)
+  out_file <- sprintf("results_output/destination_mnl_batch_%s.csv", batch_id)
   fwrite(batch_dt, out_file)
   cat(sprintf("\nBatch of %d model(s) saved to %s\n", length(n_agents_vec), out_file))
   batch_dt
@@ -363,7 +363,7 @@ run_destination_bootstrap <- function(n_agents, n_alts, n_reps = 10, attr_vars =
   boot_dt <- rbindlist(all_estimates)
   setcolorder(boot_dt, c("batch_id", "run_id", setdiff(names(boot_dt), c("batch_id", "run_id"))))
 
-  out_file <- sprintf("output/destination_mnl_bootstrap_%s.csv", batch_id)
+  out_file <- sprintf("results_output/destination_mnl_bootstrap_%s.csv", batch_id)
   fwrite(boot_dt, out_file)
 
   summary_dt <- boot_dt[, .(

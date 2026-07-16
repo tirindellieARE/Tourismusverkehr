@@ -1,5 +1,5 @@
 library(data.table)
-dt <- fread("output/bootstrap_results.csv")
+dt <- fread("results_output/bootstrap_results.csv")
 cat("Samples completed:", uniqueN(dt$sample), "\n\n")
 
 dt_free <- dt[param != "beta_tt_other"]

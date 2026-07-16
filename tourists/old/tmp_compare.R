@@ -1,12 +1,12 @@
 suppressPackageStartupMessages(library(data.table))
 
 # 5000-agent result at 300 alts (from old nalts_results.csv)
-old <- fread("output/nalts_results.csv")
+old <- fread("results_output/nalts_results.csv")
 old <- unique(old, by = c("n_alts", "param"))
 dt5k <- old[n_alts == 300]
 
 # 10000-agent result: extract from iterations file (last row = converged estimates)
-iter10k <- fread("output/mnl_nalts300_n10000_iterations.csv")
+iter10k <- fread("results_output/mnl_nalts300_n10000_iterations.csv")
 last    <- iter10k[.N]
 params  <- setdiff(names(last), "logLike")
 dt10k   <- data.table(

@@ -1,6 +1,6 @@
 suppressPackageStartupMessages(library(data.table))
 
-iter <- fread("output/mnl_nalts1000_n10000_iterations.csv")
+iter <- fread("results_output/mnl_nalts1000_n10000_iterations.csv")
 last <- iter[.N]
 params <- setdiff(names(last), "logLike")
 
@@ -24,6 +24,6 @@ cat("N_ALTS=1000 estimates:\n")
 print(est[param != "beta_tt_other", .(param, estimate = round(estimate, 5),
                                        final_ll = round(final_ll, 0), rho2 = round(rho2, 4))])
 
-out_file <- "output/nalts_n10000_results.csv"
+out_file <- "results_output/nalts_n10000_results.csv"
 fwrite(est, out_file, append = TRUE)
 cat("\nAppended to", out_file, "\n")

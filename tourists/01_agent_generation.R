@@ -4,9 +4,10 @@ library(sf)
 user = "MR"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/")}
-    
 
-raw = fread("data/Finale_Auswertungsdatenbank_AGQPV2015_V2.csv")
+dir.create("data/output", recursive = TRUE, showWarnings = FALSE)
+
+raw = fread("data/input/Finale_Auswertungsdatenbank_AGQPV2015_V2.csv")
 agqpv= dplyr::filter(raw, STARTORTLANDISO != "CH")
 agqpv= dplyr::filter(agqpv, ZIELORTLAND == 1)
 agqpv= dplyr::filter(agqpv, FAHRTZWECK == 5)
@@ -32,7 +33,7 @@ agqpv[, border_mode_label := dplyr::case_when(
 # Zones CRS: CH1903+/LV95; coordinates in agents are WGS84 (degrees).
 # =============================================================================
 
-ZONES_FILE <- "data/zones_communes.gpkg"
+ZONES_FILE <- "data/input/zones_communes.gpkg"
 zones_sf   <- st_read(ZONES_FILE, quiet = TRUE)
 
 assign_zones <- function(lon, lat, zones) {
@@ -95,7 +96,7 @@ cat(sprintf(
 zone_topology <- as.data.table(unique(st_drop_geometry(zones_sf)[, c("NO", "STALAN2020")]))
 agqpv <- zone_topology[agqpv, on = c(NO = "dest_zone")]
 setnames(agqpv, c("NO", "STALAN2020"), c("dest_zone", "dest_zone_topology"))
-fwrite(agqpv, "data/agqpv.csv")
+fwrite(agqpv, "data/output/agqpv.csv")
 
 # set scaling factor for computational reasons
 SCALING_FACTOR = 1000
@@ -106,5 +107,5 @@ reps = floor(w) + (runif(length(w)) < (w - floor(w)))
 agents = agqpv[rep(1:.N, reps)]
 
 agents[, agent_id := .I]
-fwrite(agents, "data/agents.csv")
-cat(sprintf("Agents saved to data/agents.csv (%d rows, %d columns)\n", nrow(agents), ncol(agents)))
+fwrite(agents, "data/output/agents.csv")
+cat(sprintf("Agents saved to data/output/agents.csv (%d rows, %d columns)\n", nrow(agents), ncol(agents)))

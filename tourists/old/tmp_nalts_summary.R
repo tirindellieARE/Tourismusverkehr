@@ -1,5 +1,5 @@
 suppressPackageStartupMessages(library(data.table))
-dt <- fread("output/nalts_results.csv")
+dt <- fread("results_output/nalts_results.csv")
 
 # deduplicate (N_ALTS=500 ran twice due to overlapping runs; estimates identical)
 dt <- unique(dt, by = c("n_alts", "param"))

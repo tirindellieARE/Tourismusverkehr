@@ -1,5 +1,7 @@
-args  <- commandArgs(trailingOnly = TRUE)
-SEED  <- as.integer(args[1])
+args     <- commandArgs(trailingOnly = TRUE)
+N_ALTS   <- as.integer(args[1])
+N_AGENTS <- if (length(args) >= 2) as.integer(args[2]) else 5000
+SEED     <- if (length(args) >= 3) as.integer(args[3]) else 42
 
 suppressPackageStartupMessages({
   library(data.table)
@@ -8,12 +10,9 @@ suppressPackageStartupMessages({
   library(apollo)
 })
 
-N_ALTS   <- 100
-N_AGENTS <- 1000
-
-agents   <- fread("data/agqpv.csv")
+agents   <- fread("data/output/agqpv.csv")
 agents[, agent_id := .I]
-zones_sf <- st_read("data/zones_communes.gpkg", quiet = TRUE)
+zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO
@@ -27,7 +26,7 @@ agents_noswiss[, nat_group := fcase(
   default           = "other"
 )]
 
-tt_dt <- readRDS("data/tt_avg_lookup.rds")
+tt_dt <- readRDS("data/input/tt_avg_lookup.rds")
 
 set.seed(SEED)
 agents_sub <- agents_noswiss[sample(.N, N_AGENTS)]
@@ -68,10 +67,10 @@ database <- as.data.frame(
 invisible(capture.output(apollo_initialise()))
 
 apollo_control <- list(
-  modelName       = sprintf("mnl_s%02d", SEED),
-  modelDescr      = "bootstrap sample",
+  modelName       = sprintf("mnl_nalts%d_n%d", N_ALTS, N_AGENTS),
+  modelDescr      = sprintf("MNL %d alts %d agents", N_ALTS, N_AGENTS),
   indivID         = "agent_id",
-  outputDirectory = "output/"
+  outputDirectory = "results_output/"
 )
 
 apollo_beta = c(
@@ -116,16 +115,29 @@ apollo_probabilities <- function(apollo_beta, apollo_inputs, functionality = "es
   return(P)
 }
 
+t0    <- proc.time()
 model <- apollo_estimate(apollo_beta, apollo_fixed, apollo_probabilities, apollo_inputs)
+elapsed <- (proc.time() - t0)["elapsed"]
 
-# Write results to CSV (one row per parameter)
+estimates <- model$estimate
+final_ll  <- model$LLout
+
+rho2 <- if (!is.null(model$rho2_0) && length(model$rho2_0) == 1) model$rho2_0 else NA_real_
+
 est <- data.table(
-  sample   = SEED,
-  param    = names(model$estimate),
-  estimate = as.numeric(model$estimate),
-  final_ll = model$LLout
+  n_agents = N_AGENTS,
+  n_alts   = N_ALTS,
+  param    = names(estimates),
+  estimate = as.numeric(estimates),
+  final_ll = final_ll,
+  rho2     = rho2,
+  seconds  = round(elapsed, 1)
 )
-out_file <- "output/bootstrap_results.csv"
+
+out_file <- sprintf("results_output/nalts_n%d_results.csv", N_AGENTS)
 fwrite(est, out_file, append = file.exists(out_file))
 
-message(sprintf("Sample %d done  LL=%.4f", SEED, model$LLout))
+message(sprintf("N_ALTS=%d  LL=%.2f  rho2=%s  time=%.0fs",
+                N_ALTS, final_ll,
+                if (is.na(rho2)) "NA" else sprintf("%.4f", rho2),
+                elapsed))

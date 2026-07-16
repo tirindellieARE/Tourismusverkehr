@@ -3,7 +3,7 @@
 #
 # The mode choice model is estimated on the REVEALED-PREFERENCE agqpv trips:
 # each respondent's actual origin_zone -> dest_zone pair gives a real tt_miv
-# (car) / tt_oev (PT) travel time from data/tt_light.fst (built by
+# (car) / tt_oev (PT) travel time from data/output/tt_light.fst (built by
 # 02_build_tt_lookups.R), and border_mode tells us which mode they actually
 # used to cross into Switzerland (1 = road/car, 2 = rail/PT). tt_light has
 # 100% coverage for these real OD pairs, so it's the only database needed for
@@ -15,7 +15,7 @@
 #
 # The logsum (inclusive value / expected maximum utility)
 #   logsum_od = ln( exp(V_car_od) + exp(V_pt_od) )
-# is then computed for EVERY OD pair in data/tt_full.fst (all agqpv origins x
+# is then computed for EVERY OD pair in data/output/tt_full.fst (all agqpv origins x
 # all ~8000 reachable dest zones) using the estimated mode-choice coefficients,
 # since the destination choice model (04_destination_choice.R) needs a logsum
 # for arbitrary alternative zones, not just the ones respondents actually
@@ -39,21 +39,21 @@ suppressPackageStartupMessages({
 # 0. LOAD DATA
 # -----------------------------------------------------------------------------
 
-tt_light <- as.data.table(read_fst("data/tt_light.fst"))
+tt_light <- as.data.table(read_fst("data/output/tt_light.fst"))
 setkey(tt_light, origin_zone, dest_zone)
-cat(sprintf("Loaded data/tt_light.fst (%d rows)\n", nrow(tt_light)))
+cat(sprintf("Loaded data/output/tt_light.fst (%d rows)\n", nrow(tt_light)))
 
-agqpv_full <- fread("data/agqpv.csv")
+agqpv_full <- fread("data/output/agqpv.csv")
 agqpv_full[, agent_id := .I]
 agqpv <- agqpv_full[nationality != 1]
 cat(sprintf("Loaded agqpv.csv: %d respondents (%d non-Swiss, %d Swiss excluded)\n",
     nrow(agqpv_full), nrow(agqpv), nrow(agqpv_full) - nrow(agqpv)))
 
-tt_full <- as.data.table(read_fst("data/tt_full.fst"))
+tt_full <- as.data.table(read_fst("data/output/tt_full.fst"))
 setkey(tt_full, origin_zone, dest_zone)
-cat(sprintf("Loaded data/tt_full.fst (%d rows)\n\n", nrow(tt_full)))
+cat(sprintf("Loaded data/output/tt_full.fst (%d rows)\n\n", nrow(tt_full)))
 
-dir.create("output", showWarnings = FALSE)
+dir.create("results_output", showWarnings = FALSE)
 invisible(capture.output(apollo_initialise()))
 
 # -----------------------------------------------------------------------------
@@ -127,7 +127,7 @@ estimate_mode_choice <- function(mode_data, model_name) {
     modelName       = model_name,
     modelDescr      = sprintf("Binary MNL mode choice (car vs PT) -- %s", model_name),
     indivID         = "agent_id",
-    outputDirectory = "output/"
+    outputDirectory = "results_output/"
   )
 
   apollo_beta  <- c(asc_car = 0, b_tt_car = 0, b_tt_pt = 0)
@@ -169,8 +169,8 @@ estimate_mode_choice <- function(mode_data, model_name) {
 }
 
 # Estimates the mode choice model on `agqpv_sub`, saves the model object to
-# output/mode_choice_model_<tag>.rds, computes the logsum for every OD pair in
-# tt_full, and saves it to data/tt_full_logsum_<tag>.fst ("" -> pooled files
+# results_output/mode_choice_model_<tag>.rds, computes the logsum for every OD pair in
+# tt_full, and saves it to data/output/tt_full_logsum_<tag>.fst ("" -> pooled files
 # with no suffix, matching the original file names).
 run_mode_choice_and_logsum <- function(agqpv_sub, model_name, tag = "") {
   agents_sub <- sample_agents(agqpv_sub, nrow(agqpv_sub), seed = 42)
@@ -180,11 +180,11 @@ run_mode_choice_and_logsum <- function(agqpv_sub, model_name, tag = "") {
 
   model <- estimate_mode_choice(mode_data, model_name)
 
-  model_path <- sprintf("output/mode_choice_model%s.rds", tag)
+  model_path <- sprintf("results_output/mode_choice_model%s.rds", tag)
   saveRDS(model, model_path)
 
   tt_full_logsum <- compute_logsum(tt_full, model)
-  logsum_path <- sprintf("data/tt_full_logsum%s.fst", tag)
+  logsum_path <- sprintf("data/output/tt_full_logsum%s.fst", tag)
   write_fst(tt_full_logsum, logsum_path, compress = 100)
 
   cat(sprintf("[%s] logsum -> %s (range [%.3f, %.3f], mean %.3f)\n\n",
@@ -212,6 +212,6 @@ tagesreise   <- run_mode_choice_and_logsum(agqpv_tagesreise,   "mode_choice_tage
 reise_mit_ue <- run_mode_choice_and_logsum(agqpv_reise_mit_ue, "mode_choice_reisemitue",   tag = "_reisemitue")
 
 cat("Done. Logsum files:\n")
-cat("  data/tt_full_logsum.fst            (pooled, all non-Swiss)\n")
-cat("  data/tt_full_logsum_tagesreise.fst (n_nights == 0)\n")
-cat("  data/tt_full_logsum_reisemitue.fst (n_nights > 0)\n")
+cat("  data/output/tt_full_logsum.fst            (pooled, all non-Swiss)\n")
+cat("  data/output/tt_full_logsum_tagesreise.fst (n_nights == 0)\n")
+cat("  data/output/tt_full_logsum_reisemitue.fst (n_nights > 0)\n")
