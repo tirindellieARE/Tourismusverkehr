@@ -36,6 +36,14 @@ agqpv[, border_mode_label := dplyr::case_when(
 ZONES_FILE <- "data/input/zones_communes.gpkg"
 zones_sf   <- st_read(ZONES_FILE, quiet = TRUE)
 
+# One zone (NO 910000000) has an empty geometry and no attributes at all
+# (including no MAKROBEZ_STAAT) -- drop it before any zone assignment.
+n_zones_before <- nrow(zones_sf)
+zones_sf <- zones_sf[!is.na(zones_sf$MAKROBEZ_STAAT), ]
+if (nrow(zones_sf) < n_zones_before) {
+  cat(sprintf("Dropped %d zone(s) with missing MAKROBEZ_STAAT\n", n_zones_before - nrow(zones_sf)))
+}
+
 assign_zones <- function(lon, lat, zones) {
   pts <- st_as_sf(
     data.frame(lon = lon, lat = lat),
@@ -96,6 +104,54 @@ cat(sprintf(
 zone_topology <- as.data.table(unique(st_drop_geometry(zones_sf)[, c("NO", "STALAN2020")]))
 agqpv <- zone_topology[agqpv, on = c(NO = "dest_zone")]
 setnames(agqpv, c("NO", "STALAN2020"), c("dest_zone", "dest_zone_topology"))
+
+# Country (CH / LI / Ausland) of each zone type, from MAKROBEZ_STAAT -- lets us
+# verify these are genuinely foreign tourists (origin/residence abroad) headed
+# into Switzerland (destination CH).
+zone_country <- as.data.table(unique(st_drop_geometry(zones_sf)[, c("NO", "MAKROBEZ_STAAT")]))
+
+agqpv <- zone_country[agqpv, on = c(NO = "origin_zone")]
+setnames(agqpv, c("NO", "MAKROBEZ_STAAT"), c("origin_zone", "origin_zone_country"))
+
+agqpv <- zone_country[agqpv, on = c(NO = "dest_zone")]
+setnames(agqpv, c("NO", "MAKROBEZ_STAAT"), c("dest_zone", "dest_zone_country"))
+
+agqpv <- zone_country[agqpv, on = c(NO = "residence_zone")]
+setnames(agqpv, c("NO", "MAKROBEZ_STAAT"), c("residence_zone", "residence_zone_country"))
+
+cat("origin_zone_country breakdown:\n");    print(agqpv[, .N, by = origin_zone_country][order(-N)])
+cat("dest_zone_country breakdown:\n");      print(agqpv[, .N, by = dest_zone_country][order(-N)])
+cat("residence_zone_country breakdown:\n"); print(agqpv[, .N, by = residence_zone_country][order(-N)])
+
+# =============================================================================
+# CONSISTENCY FILTER
+# Drop observations that contradict "foreign tourist entering Switzerland":
+#   - origin_zone_country == "CH"        : the reported border-entry point is
+#     itself in Switzerland, not abroad
+#   - dest_zone_country != "CH"          : the reported destination point is
+#     not in Switzerland, despite the raw-data filter (ZIELORTLAND == 1)
+#   - nationality/residence mismatch     : nationality == 1 (Swiss) implies
+#     residence_zone_country should be "CH", and nationality != 1 implies it
+#     should be abroad ("Ausland"/"LI") -- drop rows where this disagrees
+#     (likely a residence coordinate geocoded just across the border)
+# =============================================================================
+
+drop_origin_ch <- agqpv$origin_zone_country == "CH"
+drop_dest_abroad <- agqpv$dest_zone_country != "CH"
+drop_residence_mismatch <- (agqpv$nationality == 1) != (agqpv$residence_zone_country == "CH")
+
+cat(sprintf(
+  "\nConsistency filter:\n  origin_zone_country == CH        : %d obs\n  dest_zone_country != CH           : %d obs\n  nationality/residence mismatch    : %d obs\n",
+  sum(drop_origin_ch), sum(drop_dest_abroad), sum(drop_residence_mismatch)
+))
+
+to_drop <- drop_origin_ch | drop_dest_abroad | drop_residence_mismatch
+n_overlap <- sum(drop_origin_ch) + sum(drop_dest_abroad) + sum(drop_residence_mismatch) - sum(to_drop)
+cat(sprintf("  Total dropped (union): %d / %d obs (%d obs matched more than one criterion)\n", sum(to_drop), nrow(agqpv), n_overlap))
+
+agqpv <- agqpv[!to_drop]
+cat(sprintf("Remaining after consistency filter: %d obs\n", nrow(agqpv)))
+
 fwrite(agqpv, "data/output/agqpv.csv")
 
 # set scaling factor for computational reasons

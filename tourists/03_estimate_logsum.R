@@ -3,9 +3,9 @@
 #
 # The mode choice model is estimated on the REVEALED-PREFERENCE agqpv trips:
 # each respondent's actual origin_zone -> dest_zone pair gives a real tt_miv
-# (car) / tt_oev (PT) travel time from data/output/tt_light.fst (built by
+# (car) / tt_oev (PT) travel time from data/output/tt_agqpv.fst (built by
 # 02_build_tt_lookups.R), and border_mode tells us which mode they actually
-# used to cross into Switzerland (1 = road/car, 2 = rail/PT). tt_light has
+# used to cross into Switzerland (1 = road/car, 2 = rail/PT). tt_agqpv has
 # 100% coverage for these real OD pairs, so it's the only database needed for
 # estimation.
 #
@@ -15,18 +15,26 @@
 #
 # The logsum (inclusive value / expected maximum utility)
 #   logsum_od = ln( exp(V_car_od) + exp(V_pt_od) )
-# is then computed for EVERY OD pair in data/output/tt_full.fst (all agqpv origins x
-# all ~8000 reachable dest zones) using the estimated mode-choice coefficients,
-# since the destination choice model (04_destination_choice.R) needs a logsum
-# for arbitrary alternative zones, not just the ones respondents actually
-# visited -- tt_light's OD coverage is too sparse to be useful there, so only
-# the full version is written to disk.
+# is then computed for EVERY OD pair in TWO travel-time tables, using the
+# estimated mode-choice coefficients, since the destination choice model
+# (04_destination_choice.R) needs a logsum for arbitrary alternative zones,
+# not just the ones respondents actually visited -- tt_agqpv's OD coverage is
+# too sparse to be useful there:
+#   - data/output/tt_ausland_CH.fst (every zone abroad x every Swiss
+#     destination zone) -> data/output/tt_ausland_CH_logsum<tag>.fst -- the
+#     EMU actually consumed by 04_destination_choice.R (foreign entry point
+#     -> Swiss destination)
+#   - data/output/tt_CH_CH.fst (every Swiss zone x every other Swiss zone)
+#     -> data/output/tt_CH_CH_logsum<tag>.fst -- domestic zone-to-zone EMU,
+#     not currently consumed by any other script
+# (both built by 02_build_tt_lookups.R; their destination side is CH zones
+# only, since Ausland/LI zones are never valid tourism destinations here).
 #
-# In addition to the pooled model, the mode choice model (and its logsum) is
-# re-estimated separately on the Tagesreise (n_nights == 0) and Reise mit Ü.
-# (n_nights > 0) subgroups, since day-trippers and overnight visitors may have
-# different car/PT propensities -- their destination models should each use
-# their own subgroup-specific EMU rather than the pooled one.
+# In addition to the pooled model, the mode choice model (and both logsums)
+# is re-estimated separately on the Tagesreise (n_nights == 0) and Reise mit
+# Ü. (n_nights > 0) subgroups, since day-trippers and overnight visitors may
+# have different car/PT propensities -- their destination models should each
+# use their own subgroup-specific EMU rather than the pooled one.
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -39,9 +47,9 @@ suppressPackageStartupMessages({
 # 0. LOAD DATA
 # -----------------------------------------------------------------------------
 
-tt_light <- as.data.table(read_fst("data/output/tt_light.fst"))
-setkey(tt_light, origin_zone, dest_zone)
-cat(sprintf("Loaded data/output/tt_light.fst (%d rows)\n", nrow(tt_light)))
+tt_agqpv <- as.data.table(read_fst("data/output/tt_agqpv.fst"))
+setkey(tt_agqpv, origin_zone, dest_zone)
+cat(sprintf("Loaded data/output/tt_agqpv.fst (%d rows)\n", nrow(tt_agqpv)))
 
 agqpv_full <- fread("data/output/agqpv.csv")
 agqpv_full[, agent_id := .I]
@@ -49,9 +57,13 @@ agqpv <- agqpv_full[nationality != 1]
 cat(sprintf("Loaded agqpv.csv: %d respondents (%d non-Swiss, %d Swiss excluded)\n",
     nrow(agqpv_full), nrow(agqpv), nrow(agqpv_full) - nrow(agqpv)))
 
-tt_full <- as.data.table(read_fst("data/output/tt_full.fst"))
-setkey(tt_full, origin_zone, dest_zone)
-cat(sprintf("Loaded data/output/tt_full.fst (%d rows)\n\n", nrow(tt_full)))
+tt_ausland_ch <- as.data.table(read_fst("data/output/tt_ausland_CH.fst"))
+setkey(tt_ausland_ch, origin_zone, dest_zone)
+cat(sprintf("Loaded data/output/tt_ausland_CH.fst (%d rows)\n", nrow(tt_ausland_ch)))
+
+tt_ch_ch <- as.data.table(read_fst("data/output/tt_CH_CH.fst"))
+setkey(tt_ch_ch, origin_zone, dest_zone)
+cat(sprintf("Loaded data/output/tt_CH_CH.fst (%d rows)\n\n", nrow(tt_ch_ch)))
 
 dir.create("results_output", showWarnings = FALSE)
 invisible(capture.output(apollo_initialise()))
@@ -103,8 +115,16 @@ compute_logsum <- function(tt_dt, model) {
   V_car <- beta["asc_car"] + beta["b_tt_car"] * tt_dt$tt_miv
   V_pt  <-                   beta["b_tt_pt"]  * tt_dt$tt_oev
 
+  # tt_miv/tt_oev are NA where 02_build_tt_lookups.R found that mode
+  # unreachable (OMX sentinel travel time) -- treat a missing mode as
+  # excluded from the logsum (utility -Inf), not as an unknown/missing OD
+  # pair. If BOTH modes are unreachable, the pair truly has no logsum (NA).
+  V_car[is.na(V_car)] <- -Inf
+  V_pt[is.na(V_pt)]   <- -Inf
+
   v_max <- pmax(V_car, V_pt)
   logsum <- v_max + log(exp(V_car - v_max) + exp(V_pt - v_max))
+  logsum[is.infinite(v_max)] <- NA_real_
 
   out <- copy(tt_dt)
   out[, logsum := logsum]
@@ -169,12 +189,27 @@ estimate_mode_choice <- function(mode_data, model_name) {
 }
 
 # Estimates the mode choice model on `agqpv_sub`, saves the model object to
-# results_output/mode_choice_model_<tag>.rds, computes the logsum for every OD pair in
-# tt_full, and saves it to data/output/tt_full_logsum_<tag>.fst ("" -> pooled files
-# with no suffix, matching the original file names).
+# results_output/mode_choice_model_<tag>.rds, then computes the logsum for
+# every OD pair in BOTH tt_ausland_ch and tt_ch_ch, saving them to
+# data/output/tt_ausland_CH_logsum_<tag>.fst and
+# data/output/tt_CH_CH_logsum_<tag>.fst ("" -> pooled files with no suffix).
+save_logsum <- function(tt_dt, out_prefix, model, model_name, tag) {
+  tt_logsum <- compute_logsum(tt_dt, model)
+  logsum_path <- sprintf("%s_logsum%s.fst", out_prefix, tag)
+  write_fst(tt_logsum, logsum_path, compress = 100)
+
+  n_na_logsum <- sum(is.na(tt_logsum$logsum))
+  cat(sprintf("[%s] logsum -> %s (range [%.3f, %.3f], mean %.3f, %d/%d NA -- both modes unreachable)\n",
+      model_name, logsum_path,
+      min(tt_logsum$logsum, na.rm = TRUE), max(tt_logsum$logsum, na.rm = TRUE),
+      mean(tt_logsum$logsum, na.rm = TRUE), n_na_logsum, nrow(tt_logsum)))
+
+  tt_logsum
+}
+
 run_mode_choice_and_logsum <- function(agqpv_sub, model_name, tag = "") {
   agents_sub <- sample_agents(agqpv_sub, nrow(agqpv_sub), seed = 42)
-  mode_data  <- build_mode_data(agents_sub, tt_light)
+  mode_data  <- build_mode_data(agents_sub, tt_agqpv)
   cat(sprintf("[%s] estimation sample: %d agents (%.1f%% car, %.1f%% pt)\n",
       model_name, nrow(mode_data), 100 * mean(mode_data$choice == 1), 100 * mean(mode_data$choice == 2)))
 
@@ -183,14 +218,11 @@ run_mode_choice_and_logsum <- function(agqpv_sub, model_name, tag = "") {
   model_path <- sprintf("results_output/mode_choice_model%s.rds", tag)
   saveRDS(model, model_path)
 
-  tt_full_logsum <- compute_logsum(tt_full, model)
-  logsum_path <- sprintf("data/output/tt_full_logsum%s.fst", tag)
-  write_fst(tt_full_logsum, logsum_path, compress = 100)
+  ausland_ch_logsum <- save_logsum(tt_ausland_ch, "data/output/tt_ausland_CH", model, model_name, tag)
+  ch_ch_logsum      <- save_logsum(tt_ch_ch,      "data/output/tt_CH_CH",      model, model_name, tag)
+  cat("\n")
 
-  cat(sprintf("[%s] logsum -> %s (range [%.3f, %.3f], mean %.3f)\n\n",
-      model_name, logsum_path, min(tt_full_logsum$logsum), max(tt_full_logsum$logsum), mean(tt_full_logsum$logsum)))
-
-  list(model = model, logsum = tt_full_logsum)
+  list(model = model, logsum = ausland_ch_logsum, logsum_ch_ch = ch_ch_logsum)
 }
 
 # -----------------------------------------------------------------------------
@@ -212,6 +244,9 @@ tagesreise   <- run_mode_choice_and_logsum(agqpv_tagesreise,   "mode_choice_tage
 reise_mit_ue <- run_mode_choice_and_logsum(agqpv_reise_mit_ue, "mode_choice_reisemitue",   tag = "_reisemitue")
 
 cat("Done. Logsum files:\n")
-cat("  data/output/tt_full_logsum.fst            (pooled, all non-Swiss)\n")
-cat("  data/output/tt_full_logsum_tagesreise.fst (n_nights == 0)\n")
-cat("  data/output/tt_full_logsum_reisemitue.fst (n_nights > 0)\n")
+cat("  data/output/tt_ausland_CH_logsum.fst            (pooled, all non-Swiss)\n")
+cat("  data/output/tt_ausland_CH_logsum_tagesreise.fst (n_nights == 0)\n")
+cat("  data/output/tt_ausland_CH_logsum_reisemitue.fst (n_nights > 0)\n")
+cat("  data/output/tt_CH_CH_logsum.fst                 (pooled, all non-Swiss)\n")
+cat("  data/output/tt_CH_CH_logsum_tagesreise.fst      (n_nights == 0)\n")
+cat("  data/output/tt_CH_CH_logsum_reisemitue.fst      (n_nights > 0)\n")
