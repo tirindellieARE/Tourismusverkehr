@@ -401,7 +401,7 @@ trips, non-Swiss respondents only (see below)</td>
 + exp(V_pt)) — computed for every origin–destination pair; replaces a
 raw travel time in the destination choice utility. Called
 <code>logsum</code> in the code/data
-(e.g. <code>data/tt_full_logsum.fst</code>)</td>
+(e.g. <code>data/output/tt_full_logsum.fst</code>)</td>
 </tr>
 <tr class="odd">
 <td>Topology</td>
@@ -420,14 +420,14 @@ and z-standardised</td>
 <div id="mode-choice-model-estimates-the-emu" class="section level2">
 <h2>Mode choice model (estimates the EMU)</h2>
 <p>Script: <code>03_prepare_choice_data.R</code> | Model object:
-<code>output/mode_choice_model.rds</code></p>
+<code>results_output/mode_choice_model.rds</code></p>
 <p>Binary MNL, alternatives = {car, pt}, estimated on non-Swiss agqpv
 respondents (nationality ≠ 1, matching the destination choice models’
 population) with a known mode and valid travel time
 (<code>border_mode</code>: 1 = road → car, 2 = rail → pt; PT times ≥
 1,000 min excluded as unreachable-by-PT placeholders). Travel times
 (<code>tt_miv</code>, <code>tt_oev</code>) come from
-<code>data/tt_light.fst</code>, i.e. each respondent’s own real
+<code>data/output/tt_light.fst</code>, i.e. each respondent’s own real
 origin–destination pair.</p>
 <pre><code>V_car = asc_car + b_tt_car · tt_miv
 V_pt  =           b_tt_pt  · tt_oev</code></pre>
@@ -442,30 +442,34 @@ V_pt  =           b_tt_pt  · tt_oev</code></pre>
 <tbody>
 <tr class="odd">
 <td align="left">asc_car</td>
-<td align="right">1.0974 ***</td>
+<td align="right">1.0945 ***</td>
 <td align="right">0.0381</td>
 </tr>
 <tr class="even">
 <td align="left">b_tt_car</td>
-<td align="right">−0.00371 ***</td>
+<td align="right">−0.00370 ***</td>
 <td align="right">0.00039</td>
 </tr>
 <tr class="odd">
 <td align="left">b_tt_pt</td>
-<td align="right">−0.00229 ***</td>
+<td align="right">−0.00228 ***</td>
 <td align="right">0.00037</td>
 </tr>
 </tbody>
 </table>
 <p><code>*** p&lt;0.01  ** p&lt;0.05  * p&lt;0.10</code></p>
-<p>LL(final) = −6,884.76 · ρ² (vs. equal shares) = 0.1550 · AIC =
-13,775.5 · BIC = 13,797.6 · N = 11,754 (72.2% car / 27.8% PT
+<p>LL(final) = −6,872.22 · ρ² (vs. equal shares) = 0.1543 · AIC =
+13,750.4 · BIC = 13,772.6 · N = 11,723 (72.2% car / 27.8% PT
 observed)</p>
 <p>Both travel-time coefficients are negative, as expected. The EMU
 built from these coefficients,</p>
 <pre><code>EMU_od = ln( exp(V_car,od) + exp(V_pt,od) )</code></pre>
-<p>is computed for every OD pair in <code>data/tt_full.fst</code> and
-saved to <code>data/tt_full_logsum.fst</code> (column
+<p>is computed for every OD pair in
+<code>data/output/tt_ausland_CH.fst</code> (origin abroad × destination
+in Switzerland only, for computational speed — a smaller table than
+<code>tt_full.fst</code>, which also carries Ausland/LI destination
+zones that are never valid tourism destinations here) and saved to
+<code>data/output/tt_full_logsum.fst</code> (column
 <code>logsum</code>). It correlates at <strong>−0.99</strong> with car
 travel time — confirming it behaves as an accessibility measure (high =
 easy to reach), not a cost, which is why it enters the destination
@@ -476,8 +480,8 @@ choice utility below with a <em>positive</em> expected sign.</p>
 <p>The same model is re-estimated separately on the Tagesreise
 (<code>n_nights == 0</code>) and Reise mit Ü.
 (<code>n_nights &gt; 0</code>) subgroups, each producing its own EMU
-(<code>data/tt_full_logsum_tagesreise.fst</code>,
-<code>data/tt_full_logsum_reisemitue.fst</code>) for the subgroup
+(<code>data/output/tt_full_logsum_tagesreise.fst</code>,
+<code>data/output/tt_full_logsum_reisemitue.fst</code>) for the subgroup
 destination models further down.</p>
 <table>
 <thead>
@@ -490,18 +494,18 @@ destination models further down.</p>
 <tbody>
 <tr class="odd">
 <td align="left">asc_car</td>
-<td align="right">1.2370 ***</td>
-<td align="right">0.2357 ***</td>
+<td align="right">1.2327 ***</td>
+<td align="right">0.2309 ***</td>
 </tr>
 <tr class="even">
 <td align="left">b_tt_car</td>
-<td align="right">−0.00350 ***</td>
-<td align="right">−0.00195 ***</td>
+<td align="right">−0.00349 ***</td>
+<td align="right">−0.00193 ***</td>
 </tr>
 <tr class="odd">
 <td align="left">b_tt_pt</td>
 <td align="right">−0.00288 ***</td>
-<td align="right">−0.00295 ***</td>
+<td align="right">−0.00294 ***</td>
 </tr>
 </tbody>
 </table>
@@ -530,26 +534,26 @@ destination models further down.</p>
 <tbody>
 <tr class="odd">
 <td>Tagesreise</td>
-<td align="right">7,004</td>
-<td align="right">−3,667.86</td>
-<td align="right">0.2445</td>
-<td align="right">7,341.7</td>
-<td align="right">7,362.3</td>
+<td align="right">6,986</td>
+<td align="right">−3,662.20</td>
+<td align="right">0.2437</td>
+<td align="right">7,330.4</td>
+<td align="right">7,350.9</td>
 <td>78.1% / 21.9%</td>
 </tr>
 <tr class="even">
 <td>Reise mit Ü.</td>
-<td align="right">4,750</td>
-<td align="right">−3,094.03</td>
-<td align="right">0.0603</td>
-<td align="right">6,194.1</td>
-<td align="right">6,213.5</td>
-<td>63.6% / 36.4%</td>
+<td align="right">4,737</td>
+<td align="right">−3,087.11</td>
+<td align="right">0.0598</td>
+<td align="right">6,180.2</td>
+<td align="right">6,199.6</td>
+<td>63.5% / 36.5%</td>
 </tr>
 </tbody>
 </table>
-<p>Day-trippers are much more car-oriented (<code>asc_car = 1.24</code>
-vs. <code>0.24</code>) and more travel-time-sensitive to car time
+<p>Day-trippers are much more car-oriented (<code>asc_car = 1.23</code>
+vs. <code>0.23</code>) and more travel-time-sensitive to car time
 specifically (<code>b_tt_car = −0.0035</code> vs. <code>−0.0019</code>)
 than overnight visitors — PT time sensitivity (<code>b_tt_pt</code>) is
 similar across both groups. Overnight visitors are far closer to a
@@ -769,7 +773,7 @@ when car gets slow, softening the pure car-time penalty in a way a fixed
 0.9/0.1 travel-time blend couldn’t.</p></li>
 </ul>
 <p>Results file:
-<code>output/destination_mnl_batch_minimal_1000agents_altsweep.csv</code></p>
+<code>results_output/destination_mnl_batch_minimal_1000agents_altsweep.csv</code></p>
 </div>
 <div id="tagesreise-vs.-reise-mit-ü.-day-trips-vs.-overnight-stays" class="section level3">
 <h3>Tagesreise vs. Reise mit Ü. (day trips vs. overnight stays)</h3>
@@ -911,9 +915,9 @@ driven much more by factors outside this minimal spec (accommodation,
 multi-day itineraries, attractivity) — consistent with the much lower ρ²
 for that group.</p>
 <p>Results file:
-<code>output/destination_mnl_tagesreise_vs_reisemitue.csv</code> · EMU
-lookups: <code>data/tt_full_logsum_tagesreise.fst</code>,
-<code>data/tt_full_logsum_reisemitue.fst</code></p>
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue.csv</code>
+· EMU lookups: <code>data/output/tt_full_logsum_tagesreise.fst</code>,
+<code>data/output/tt_full_logsum_reisemitue.fst</code></p>
 </div>
 <div id="coefficient-stability-10-sample-bootstrap" class="section level3">
 <h3>Coefficient stability (10-sample bootstrap)</h3>
@@ -1133,11 +1137,11 @@ rather than an artifact of the asymptotic approximation. ρ² stayed
 tightly banded across resamples too (Tagesreise 0.29–0.32, Reise mit Ü.
 0.049–0.068), close to each group’s single-run value.</p>
 <p>Results files:
-<code>output/destination_mnl_bootstrap_tagesreise_boot10.csv</code>,
-<code>output/destination_mnl_bootstrap_reisemitue_boot10.csv</code></p>
+<code>results_output/destination_mnl_bootstrap_tagesreise_boot10.csv</code>,
+<code>results_output/destination_mnl_bootstrap_reisemitue_boot10.csv</code></p>
 </div>
-<div id="emu-population-v02-instead-of-topology" class="section level3">
-<h3>EMU + population (v02) instead of topology</h3>
+<div id="emu-population-pop-instead-of-topology" class="section level3">
+<h3>EMU + population (pop) instead of topology</h3>
 <p>Same Tagesreise / Reise mit Ü. setup (1,000 agents, 300 alts, seed =
 42, own EMU per subgroup), but with the topology dummies
 (<code>topo2</code>/<code>topo3</code>) swapped out for
@@ -1145,7 +1149,7 @@ tightly banded across resamples too (Tagesreise 0.29–0.32, Reise mit Ü.
 (<code>04_destination_choice.R</code>,
 <code>include_topo = FALSE</code>,
 <code>attr_vars = &quot;v02_resident_population_log1p&quot;</code>):</p>
-<pre><code>V_j = Σ_k β_EMU_k · EMU_j · I(nat = k) + Σ_k β_v02_k · v02_j · I(nat = k)</code></pre>
+<pre><code>V_j = Σ_k β_EMU_k · EMU_j · I(nat = k) + Σ_k β_pop_k · pop_j · I(nat = k)</code></pre>
 <table>
 <thead>
 <tr class="header">
@@ -1206,22 +1210,22 @@ tightly banded across resamples too (Tagesreise 0.29–0.32, Reise mit Ü.
 <td align="right">6.152 ***</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · DE</td>
+<td align="left">β pop · DE</td>
 <td align="right">−0.112 **</td>
 <td align="right">−0.070 *</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · FR</td>
+<td align="left">β pop · FR</td>
 <td align="right">0.141 **</td>
 <td align="right">−0.115 *</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · IT</td>
+<td align="left">β pop · IT</td>
 <td align="right">0.226 **</td>
 <td align="right">−0.078</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · other</td>
+<td align="left">β pop · other</td>
 <td align="right">−0.500 ***</td>
 <td align="right">−0.164</td>
 </tr>
@@ -1241,11 +1245,11 @@ significance) — overnight visitors’ destination choice is still not well
 explained by either topology or population alone, consistent with the
 low ρ² for that group throughout.</p>
 <p>Results file:
-<code>output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo.csv</code></p>
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo.csv</code></p>
 </div>
 <div id="same-spec-half-sample" class="section level3">
 <h3>Same spec, half sample</h3>
-<p>Same EMU + v02 (no topology) spec, seed = 42, 300 alts, but using
+<p>Same EMU + pop (no topology) spec, seed = 42, 300 alts, but using
 <strong>half of each subgroup’s full respondent pool</strong> instead of
 1,000: 3,504 of 7,009 Tagesreise respondents, 2,375 of 4,751 Reise mit
 Ü. respondents.</p>
@@ -1321,22 +1325,22 @@ low ρ² for that group throughout.</p>
 <td align="right">6.093 ***</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · DE</td>
+<td align="left">β pop · DE</td>
 <td align="right">−0.143 ***</td>
 <td align="right">−0.073 ***</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · FR</td>
+<td align="left">β pop · FR</td>
 <td align="right">0.292 ***</td>
 <td align="right">−0.012</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · IT</td>
+<td align="left">β pop · IT</td>
 <td align="right">0.180 ***</td>
 <td align="right">−0.014</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · other</td>
+<td align="left">β pop · other</td>
 <td align="right">−0.152 **</td>
 <td align="right">−0.150 **</td>
 </tr>
@@ -1346,21 +1350,389 @@ low ρ² for that group throughout.</p>
 <p><strong>Takeaway</strong>: EMU coefficients hold up well at the
 larger sample (Tagesreise DE 13.63 → 12.78, Reise mit Ü. DE 3.39 → 3.45
 — same ballpark, tighter standard errors), reinforcing that the
-1,000-agent point estimates weren’t sample-size artifacts. The v02
-coefficients move more: Tagesreise’s <code>v02·other</code> shrinks
+1,000-agent point estimates weren’t sample-size artifacts. The pop
+coefficients move more: Tagesreise’s <code>pop·other</code> shrinks
 sharply (−0.500 → −0.152, though still significant) and standard errors
-tighten enough that <code>v02·DE/FR/IT</code> cross from <code>**</code>
-to <code>***</code>; Reise mit Ü.’s <code>v02·FR</code> flips from
+tighten enough that <code>pop·DE/FR/IT</code> cross from <code>**</code>
+to <code>***</code>; Reise mit Ü.’s <code>pop·FR</code> flips from
 marginally significant (<code>*</code>, −0.115) to null (−0.012, n.s.)
 at the larger sample — the 1,000-agent estimate for that one parameter
 looks like it was mostly small-sample noise. Runtime scaled close to
 linearly with agent count, as expected (~30s→102s for a 3.5× larger
 Tagesreise sample, ~29s→67s for Reise mit Ü.’s 2.4× larger one).</p>
 </div>
+<div id="emu-erreichbarkeit-instead-of-population-half-sample" class="section level3">
+<h3>EMU + Erreichbarkeit instead of population, half sample</h3>
+<p>Same half-sample setup (3,504 Tagesreise / 2,375 Reise mit Ü.
+respondents, seed = 42, 300 alts, own EMU per subgroup), but
+<code>pop</code> (population) swapped for
+<strong>Erreichbarkeit</strong> — a zone-level potential-accessibility
+index from <code>data/erreichbarkeit_tt2023.gpkg</code> (not part of the
+Benzoni attractivity set; 8,688 zones, exact match to the NPVM zone
+system via <code>ID_Zone</code>). Used <code>erreichbarkeit_avg</code>
+(car+PT combined), z-standardised, as the closest zone-level counterpart
+to EMU’s own car+PT blend —
+<code>erreichbarkeit_miv</code>/<code>erreichbarkeit_oev</code> are
+available in the same file if the mode-specific versions are wanted
+instead.</p>
+<pre><code>V_j = Σ_k β_EMU_k · EMU_j · I(nat = k) + Σ_k β_erreichbarkeit_k · erreichbarkeit_avg_j · I(nat = k)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th align="right">LL</th>
+<th align="right">ρ²</th>
+<th align="right">AIC</th>
+<th align="right">BIC</th>
+<th align="right">Time</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Tagesreise</td>
+<td align="right">−13,927.69</td>
+<td align="right">0.3031</td>
+<td align="right">27,871.4</td>
+<td align="right">27,920.7</td>
+<td align="right">119s</td>
+</tr>
+<tr class="even">
+<td>Reise mit Ü.</td>
+<td align="right">−12,661.52</td>
+<td align="right">0.0653</td>
+<td align="right">25,339.0</td>
+<td align="right">25,385.2</td>
+<td align="right">66s</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Parameter</th>
+<th align="right">Tagesreise</th>
+<th align="right">Reise mit Ü.</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">β EMU · DE</td>
+<td align="right">12.873 ***</td>
+<td align="right">4.596 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β EMU · FR</td>
+<td align="right">12.819 ***</td>
+<td align="right">6.310 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β EMU · IT</td>
+<td align="right">9.336 ***</td>
+<td align="right">6.734 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β EMU · other</td>
+<td align="right">13.946 ***</td>
+<td align="right">6.032 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit · DE</td>
+<td align="right">0.364 ***</td>
+<td align="right">−0.692 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β Erreichbarkeit · FR</td>
+<td align="right">0.167 ***</td>
+<td align="right">−0.137 *</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit · IT</td>
+<td align="right">−0.402 ***</td>
+<td align="right">−0.428 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β Erreichbarkeit · other</td>
+<td align="right">−0.021</td>
+<td align="right">−0.027</td>
+</tr>
+</tbody>
+</table>
+<p><code>*** p&lt;0.01  ** p&lt;0.05  * p&lt;0.10</code></p>
+<p><strong>Takeaway</strong>: fit is a near-exact tie with the
+population spec for Tagesreise (ρ² 0.3033 vs. 0.3031) but notably better
+for Reise mit Ü. (0.0538 → 0.0653) — Erreichbarkeit captures something
+population didn’t for overnight visitors specifically. The sign pattern
+is the more interesting result: for Tagesreise, DE/FR are drawn to more
+accessible zones while IT avoids them (mirroring population’s
+DE/FR-positive, IT-negative split fairly closely); but for <strong>Reise
+mit Ü., Erreichbarkeit is negative across every significant
+nationality</strong> (DE strongly so) — overnight visitors
+systematically prefer <em>less</em> accessible zones, the opposite of
+what population showed (population was mostly null for this group).
+Since this index measures potential accessibility via the national
+transport network, a high score marks well-connected, urban/central
+zones — so this reads as overnight tourists gravitating toward quieter,
+more remote destinations precisely because they’re staying longer, while
+day-trippers (Tagesreise, DE/FR at least) still lean toward
+easy-to-reach places, consistent with the much larger EMU coefficients
+Tagesreise already showed throughout.</p>
+<p>Results file:
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_erreichbarkeit_half.csv</code></p>
+</div>
+<div id="emu-population-erreichbarkeit-together-half-sample" class="section level3">
+<h3>EMU + population + Erreichbarkeit together, half sample</h3>
+<p>Same half-sample setup (3,504 Tagesreise / 2,375 Reise mit Ü.
+respondents, seed = 42, 300 alts, own EMU per subgroup), now with
+<strong>both</strong> <code>pop</code> and <code>Erreichbarkeit</code>
+in the same specification instead of swapping one for the other.</p>
+<pre><code>V_j = Σ_k β_EMU_k · EMU_j · I(nat = k) + Σ_k β_pop_k · pop_j · I(nat = k) + Σ_k β_erreichbarkeit_k · erreichbarkeit_avg_j · I(nat = k)</code></pre>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th align="right">LL</th>
+<th align="right">ρ²</th>
+<th align="right">AIC</th>
+<th align="right">BIC</th>
+<th align="right">Time</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Tagesreise</td>
+<td align="right">−13,848.75</td>
+<td align="right">0.3071</td>
+<td align="right">27,721.5</td>
+<td align="right">27,795.4</td>
+<td align="right">236s</td>
+</tr>
+<tr class="even">
+<td>Reise mit Ü.</td>
+<td align="right">−12,655.32</td>
+<td align="right">0.0658</td>
+<td align="right">25,334.6</td>
+<td align="right">25,403.9</td>
+<td align="right">156s</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Parameter</th>
+<th align="right">Tagesreise</th>
+<th align="right">Reise mit Ü.</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">β EMU · DE</td>
+<td align="right">12.883 ***</td>
+<td align="right">4.583 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β EMU · FR</td>
+<td align="right">12.823 ***</td>
+<td align="right">6.310 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β EMU · IT</td>
+<td align="right">9.365 ***</td>
+<td align="right">6.733 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β EMU · other</td>
+<td align="right">14.061 ***</td>
+<td align="right">6.094 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β pop · DE</td>
+<td align="right">−0.133 ***</td>
+<td align="right">0.050</td>
+</tr>
+<tr class="even">
+<td align="left">β pop · FR</td>
+<td align="right">0.276 ***</td>
+<td align="right">0.002</td>
+</tr>
+<tr class="odd">
+<td align="left">β pop · IT</td>
+<td align="right">0.449 ***</td>
+<td align="right">0.140 **</td>
+</tr>
+<tr class="even">
+<td align="left">β pop · other</td>
+<td align="right">−0.152 **</td>
+<td align="right">−0.150 **</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit · DE</td>
+<td align="right">0.348 ***</td>
+<td align="right">−0.714 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β Erreichbarkeit · FR</td>
+<td align="right">0.084</td>
+<td align="right">−0.138 *</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit · IT</td>
+<td align="right">−0.681 ***</td>
+<td align="right">−0.503 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β Erreichbarkeit · other</td>
+<td align="right">−0.011</td>
+<td align="right">0.005</td>
+</tr>
+</tbody>
+</table>
+<p><code>*** p&lt;0.01  ** p&lt;0.05  * p&lt;0.10</code></p>
+<p><strong>Correlation check</strong>: <code>pop</code> (log1p, as used
+in the models) and <code>erreichbarkeit_avg</code> correlate at only
+<strong>r = 0.257</strong> across the 7,978 zones (Spearman 0.309; a
+simple linear fit of one on the other gives R² = 0.066 — Erreichbarkeit
+explains just ~7% of population’s variance). So these are <em>not</em>
+near-redundant measures of “how central/urban is this zone” — the
+relationship is real but modest.</p>
+<p><strong>Takeaway</strong>: fit improves only modestly over either
+single-variable spec (Tagesreise 0.3033/0.3031 → 0.3071; Reise mit Ü.
+0.0538/0.0653 → 0.0658 — essentially just the Erreichbarkeit-alone
+number, population adds almost nothing on top for this group). What’s
+notable is that even with only a modest raw correlation, the
+coefficients still shift substantially when both are in the model
+together — likely because the nationality interactions split each group
+into a few hundred to ~1,300 observations, where even r ≈ 0.26
+collinearity can meaningfully move point estimates and significance,
+more than the population-wide correlation alone would suggest: -
+<strong>Reise mit Ü. · DE flips from significant to null</strong>:
+<code>pop·DE</code> was −0.073*** alone, becomes 0.050 (n.s.) once
+Erreichbarkeit is added — Erreichbarkeit was absorbing what looked like
+a population effect. - <strong>Tagesreise · FR Erreichbarkeit flips from
+significant to null</strong>: <code>erreichbarkeit·FR</code> was
+0.167*** alone, becomes 0.084 (n.s.) once population is added — here
+it’s population absorbing Erreichbarkeit’s apparent effect. - Both
+<code>IT</code> coefficients get <em>stronger</em> in the combined spec
+(Tagesreise <code>erreichbarkeit·IT</code> −0.402→−0.681,
+<code>pop·IT</code> 0.180→0.449; Reise mit Ü. <code>pop·IT</code>
+n.s.→0.140**) — once each variable’s shared variance is netted out, IT’s
+genuine preference for less-accessible, less-populous destinations comes
+through more sharply. - EMU stays essentially untouched throughout, as
+in every other spec here — it isn’t collinear with either zone-level
+attractivity measure.</p>
+<p>Practically: given the overlap, a single spec with
+<strong>either</strong> <code>pop</code> or <code>Erreichbarkeit</code>
+(not both) is probably the better default going forward — the combined
+model doesn’t buy much additional fit for the added complexity, and the
+coefficient instability between specs is itself informative about what
+each variable is (and isn’t) independently capturing.</p>
+<p>Results file:
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_pop_erreichbarkeit_half.csv</code></p>
+</div>
+<div id="emu-population-erreichbarkeit-pooled-no-nationality-interaction-half-sample" class="section level3">
+<h3>EMU + population + Erreichbarkeit, pooled (no nationality
+interaction), half sample</h3>
+<p>Same half-sample setup (3,504 Tagesreise / 2,375 Reise mit Ü.
+respondents, seed = 42, 300 alts, own EMU per subgroup, no topology),
+but this time <strong>without</strong> interacting any variable with
+nationality — a single pooled coefficient per variable across all
+respondents, instead of one per nationality group:</p>
+<pre><code>V_j = β_EMU · EMU_j + β_pop · pop_j + β_erreichbarkeit · erreichbarkeit_avg_j</code></pre>
+<p><code>run_destination_model()</code> was extended with an
+<code>interact_nationality</code> argument (default <code>TRUE</code>,
+preserving every other spec in this document) to support this.</p>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th align="right">LL</th>
+<th align="right">ρ²</th>
+<th align="right">AIC</th>
+<th align="right">BIC</th>
+<th align="right">Time</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Tagesreise</td>
+<td align="right">−14,047.91</td>
+<td align="right">0.2971</td>
+<td align="right">28,101.8</td>
+<td align="right">28,120.3</td>
+<td align="right">20s</td>
+</tr>
+<tr class="even">
+<td>Reise mit Ü.</td>
+<td align="right">−12,727.79</td>
+<td align="right">0.0604</td>
+<td align="right">25,461.6</td>
+<td align="right">25,478.9</td>
+<td align="right">11s</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Parameter</th>
+<th align="right">Tagesreise</th>
+<th align="right">Reise mit Ü.</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">β EMU</td>
+<td align="right">11.506 ***</td>
+<td align="right">5.605 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β pop</td>
+<td align="right">0.049 **</td>
+<td align="right">0.034</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit</td>
+<td align="right">0.017</td>
+<td align="right">−0.544 ***</td>
+</tr>
+</tbody>
+</table>
+<p><code>*** p&lt;0.01  ** p&lt;0.05  * p&lt;0.10</code></p>
+<p><strong>Takeaway</strong>: pooling erases exactly the pattern the
+nationality-interacted spec revealed. In the interacted model,
+<code>pop</code> and <code>Erreichbarkeit</code> had <em>opposite signs
+across nationalities</em> for both subgroups (e.g. Tagesreise
+<code>pop</code>: −0.133 DE / +0.276 FR / +0.449 IT / −0.152 other;
+Reise mit Ü. <code>Erreichbarkeit</code>: −0.714 DE / −0.138 FR / −0.503
+IT / +0.005 other). Averaging over nationality washes most of that out:
+- <strong>Tagesreise <code>Erreichbarkeit</code> goes from a strong,
+sign-mixed effect (DE +0.348</strong><em>, FR n.s., IT
+−0.681</em><strong>) to essentially null pooled (0.017, n.s.)</strong> —
+the positive DE effect and negative IT effect largely cancel once
+nationality is no longer separated out. - <strong>Reise mit Ü.
+<code>pop</code> goes from three significant group-specific coefficients
+(IT +0.140</strong>, other −0.150<strong>, DE n.s.) to a null pooled
+coefficient (0.034, n.s.)</strong> — again, opposing signs across groups
+cancel in the average. - The two coefficients that <em>do</em> survive
+pooling — Tagesreise <code>pop</code> (0.049<strong>) and Reise mit Ü.
+<code>Erreichbarkeit</code> (−0.544</strong>*) — are the ones where the
+nationality-specific effects in the interacted spec were already fairly
+consistent in sign and magnitude across groups, so pooling doesn’t
+destroy the signal. - EMU stays large, positive and highly significant
+either way, as always, though its pooled magnitude (11.506 / 5.605) sits
+within the range of the nationality-specific estimates rather than
+matching any one of them. - Fit is very close to the interacted model
+despite dropping from 12 to 3 parameters (Tagesreise ρ² 0.3071→0.2971;
+Reise mit Ü. 0.0658→0.0604) — nationality interaction buys only a small
+amount of additional fit here, but it is precisely what surfaces the
+sign-heterogeneity above; a pooled spec would hide it.</p>
+<p>Results file:
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_pop_erreichbarkeit_half_pooled.csv</code></p>
+</div>
 <div id="choice-set-size-sensitivity-half-sample-300-500-1000-5000-alternatives" class="section level3">
 <h3>Choice-set-size sensitivity, half sample (300 → 500 → 1,000 → 5,000
 alternatives)</h3>
-<p>Same half-sample EMU + v02 (no topology) spec (3,504 Tagesreise /
+<p>Same half-sample EMU + pop (no topology) spec (3,504 Tagesreise /
 2,375 Reise mit Ü. respondents, seed = 42), now varying the choice-set
 size instead of the agent count. The zone universe has 8,688 zones
 total, so 5,000 alternatives is well within range (all draws are with
@@ -1532,7 +1904,7 @@ replacement regardless, as in every other run here).</p>
 <td align="right">5.971 ***</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · DE</td>
+<td align="left">β pop · DE</td>
 <td align="right">−0.143 ***</td>
 <td align="right">−0.141 ***</td>
 <td align="right">−0.146 ***</td>
@@ -1543,7 +1915,7 @@ replacement regardless, as in every other run here).</p>
 <td align="right">−0.073 ***</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · FR</td>
+<td align="left">β pop · FR</td>
 <td align="right">0.292 ***</td>
 <td align="right">0.300 ***</td>
 <td align="right">0.310 ***</td>
@@ -1554,7 +1926,7 @@ replacement regardless, as in every other run here).</p>
 <td align="right">−0.005</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · IT</td>
+<td align="left">β pop · IT</td>
 <td align="right">0.180 ***</td>
 <td align="right">0.179 ***</td>
 <td align="right">0.176 ***</td>
@@ -1565,7 +1937,7 @@ replacement regardless, as in every other run here).</p>
 <td align="right">−0.013</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · other</td>
+<td align="left">β pop · other</td>
 <td align="right">−0.152 **</td>
 <td align="right">−0.146 **</td>
 <td align="right">−0.138 **</td>
@@ -1585,7 +1957,7 @@ downward drift in its EMU coefficients as the choice set grows (DE 12.78
 → 10.17, FR 12.83 → 10.03, roughly −20% cumulative from 300 to 5,000
 alts) — small enough that sign and significance never change, but a
 genuine trend rather than noise, since it moves consistently in one
-direction across all four choice-set sizes. v02 stays stable throughout
+direction across all four choice-set sizes. pop stays stable throughout
 for both subgroups. ρ² keeps declining mechanically as the choice set
 grows (more random alternatives dilute the easy choices), most visibly
 for Tagesreise (0.303 → 0.194) since it’s the better-fitting model to
@@ -1599,12 +1971,12 @@ this spec — it already captures the stable part of the signal, and the
 modest additional drift visible in Tagesreise’s EMU coefficients at
 5,000 alts doesn’t come close to justifying a 28× runtime cost.</p>
 <p>Results files:
-<code>output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_half_altsweep.csv</code>,
-<code>output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_half_alts5000.csv</code></p>
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_half_altsweep.csv</code>,
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_half_alts5000.csv</code></p>
 </div>
 <div id="same-spec-full-sample" class="section level3">
 <h3>Same spec, full sample</h3>
-<p>Same EMU + v02 (no topology) spec, seed = 42, 300 alts, now using
+<p>Same EMU + pop (no topology) spec, seed = 42, 300 alts, now using
 <strong>every</strong> non-Swiss respondent in each subgroup: all 7,009
 Tagesreise, all 4,751 Reise mit Ü.</p>
 <table>
@@ -1679,22 +2051,22 @@ Tagesreise, all 4,751 Reise mit Ü.</p>
 <td align="right">6.327 ***</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · DE</td>
+<td align="left">β pop · DE</td>
 <td align="right">−0.156 ***</td>
 <td align="right">−0.081 ***</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · FR</td>
+<td align="left">β pop · FR</td>
 <td align="right">0.275 ***</td>
 <td align="right">−0.014</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · IT</td>
+<td align="left">β pop · IT</td>
 <td align="right">0.179 ***</td>
 <td align="right">0.014</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · other</td>
+<td align="left">β pop · other</td>
 <td align="right">−0.106 **</td>
 <td align="right">−0.142 ***</td>
 </tr>
@@ -1763,7 +2135,7 @@ Tagesreise, all 4,751 Reise mit Ü.</p>
 <td align="right">6.327 ***</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · DE</td>
+<td align="left">β pop · DE</td>
 <td align="right">−0.112 **</td>
 <td align="right">−0.143 ***</td>
 <td align="right">−0.156 ***</td>
@@ -1772,7 +2144,7 @@ Tagesreise, all 4,751 Reise mit Ü.</p>
 <td align="right">−0.081 ***</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · FR</td>
+<td align="left">β pop · FR</td>
 <td align="right">0.141 **</td>
 <td align="right">0.292 ***</td>
 <td align="right">0.275 ***</td>
@@ -1781,7 +2153,7 @@ Tagesreise, all 4,751 Reise mit Ü.</p>
 <td align="right">−0.014</td>
 </tr>
 <tr class="odd">
-<td align="left">β v02 · IT</td>
+<td align="left">β pop · IT</td>
 <td align="right">0.226 **</td>
 <td align="right">0.180 ***</td>
 <td align="right">0.179 ***</td>
@@ -1790,7 +2162,7 @@ Tagesreise, all 4,751 Reise mit Ü.</p>
 <td align="right">0.014</td>
 </tr>
 <tr class="even">
-<td align="left">β v02 · other</td>
+<td align="left">β pop · other</td>
 <td align="right">−0.500 ***</td>
 <td align="right">−0.152 **</td>
 <td align="right">−0.106 **</td>
@@ -1804,17 +2176,17 @@ Tagesreise, all 4,751 Reise mit Ü.</p>
 <p><strong>Takeaway</strong>: with the full sample, the picture is
 clean. EMU coefficients were already close to their final values at
 1,000 agents and barely move from half to full sample — genuinely
-stable, well-identified effects, <code>***</code> throughout. The v02
-coefficients tell a more interesting story: <code>v02·other</code> for
+stable, well-identified effects, <code>***</code> throughout. The pop
+coefficients tell a more interesting story: <code>pop·other</code> for
 Tagesreise keeps shrinking as sample grows (−0.500 → −0.152 → −0.106)
 and settles at a modest, still-significant negative effect — the
 1,000-agent estimate overstated it by roughly 5×, a real small-sample
 bias, not just noise, since it kept moving in the same direction across
-both larger samples rather than randomly settling. <code>v02·IT</code>
+both larger samples rather than randomly settling. <code>pop·IT</code>
 for Reise mit Ü. never reaches significance at any sample size and
 hovers near zero throughout — good evidence population genuinely doesn’t
-drive that group’s destination choice. <code>v02·FR</code> for Reise mit
-Ü. is the opposite pattern from <code>v02·other</code>/Tagesreise: only
+drive that group’s destination choice. <code>pop·FR</code> for Reise mit
+Ü. is the opposite pattern from <code>pop·other</code>/Tagesreise: only
 marginally significant (<code>*</code>) at 1,000 agents, then drops to
 null at both larger samples — that one looks like the 1,000-agent
 estimate was mostly noise crossing the significance threshold by chance,
@@ -1822,11 +2194,183 @@ not a real effect that got diluted. Runtime scaled essentially linearly
 with N throughout (Tagesreise: 30s → 102s → 178s for roughly 1×/3.5×/7×
 the agents; Reise mit Ü.: 29s → 67s → 129s for 1×/2.4×/4.75×).</p>
 <p>Results file:
-<code>output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_full.csv</code></p>
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_full.csv</code></p>
 <p>Results file:
-<code>output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_half.csv</code></p>
+<code>results_output/destination_mnl_tagesreise_vs_reisemitue_v02_notopo_half.csv</code></p>
 <hr />
 </div>
+</div>
+<div id="destination-choice-with-amr-regions-instead-of-npvm-zones" class="section level2">
+<h2>Destination choice with AMR regions instead of NPVM zones</h2>
+<p>New script:
+<strong><code>04_destination_choice_amr.R</code></strong>. Everything
+above uses individual NPVM zones (~8,700) as the choice set, with a
+McFadden <em>sampled</em> set of alternatives (e.g. 300 of them)
+standing in for the full set. This section instead uses the <strong>101
+AMR regions</strong> in <code>data/amr101.gpkg</code> as the choice set
+— coarser geographic units (labour-market-style regions, each named
+after its central town, e.g. “Zürich”, “Genève”, “Aarau–Olten”).</p>
+<p>Because there are only 101 regions, <strong>every agent’s full choice
+set is used — no alternative sampling.</strong> This is a genuine
+full-information MNL rather than a sampled-alternatives approximation,
+which is the main methodological difference from every result above (in
+addition to using a coarser destination unit).</p>
+<p>Each NPVM zone is assigned to an AMR region via a spatial join of its
+centroid into the region polygons (<code>05_aggregate_regions.R</code>;
+~1,012/8,688 zones whose centroid falls just outside every polygon —
+mostly lake/river-adjacent communes — fall back to their nearest
+region). EMU and Erreichbarkeit are then aggregated from zone level to
+region level as a <strong>population-weighted average</strong> over the
+zones in each region (<code>x_region = Σ pop_i·x_i / Σ pop_i</code>);
+<code>pop</code> itself is aggregated as the <strong>sum</strong> of
+zone populations, then log1p + z-standardised, same convention as the
+zone-level <code>pop</code> variable. Only the destination side is
+aggregated — each agent’s real origin zone is unchanged.</p>
+<pre><code>V_j = Σ_k β_EMU_k · EMU_j · I(nat = k) + Σ_k β_pop_k · pop_j · I(nat = k) + Σ_k β_erreichbarkeit_k · erreichbarkeit_avg_j · I(nat = k)</code></pre>
+<p>Full sample (6,991 Tagesreise / 4,738 Reise mit Ü., all non-Swiss
+respondents — feasible here since 101 alternatives/agent is far cheaper
+than the 300+ used for zone-level sampled sets), seed = 42, own EMU per
+subgroup, all 101 regions as the choice set.</p>
+<p><em>Refreshed after <code>zones_communes.gpkg</code> was updated to
+add a <code>MAKROBEZ_STAAT</code> (CH/LI/Ausland) column:
+<code>01_agent_generation.R</code> now drops 54 respondents whose
+origin/destination/residence zone contradicts “foreign tourist entering
+Switzerland” (see the script map), and the candidate zone/region
+universe used everywhere is restricted to genuine CH zones. Sample sizes
+dropped slightly (7,009→6,991 / 4,751→4,738) and coefficients moved
+marginally; conclusions below are unchanged.</em></p>
+<table>
+<thead>
+<tr class="header">
+<th>Group</th>
+<th align="right">LL</th>
+<th align="right">ρ²</th>
+<th align="right">AIC</th>
+<th align="right">BIC</th>
+<th align="right">Time</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Tagesreise</td>
+<td align="right">−18,263.25</td>
+<td align="right">0.4339</td>
+<td align="right">36,550.5</td>
+<td align="right">36,632.7</td>
+<td align="right">117s</td>
+</tr>
+<tr class="even">
+<td>Reise mit Ü.</td>
+<td align="right">−19,777.84</td>
+<td align="right">0.0955</td>
+<td align="right">39,579.7</td>
+<td align="right">39,657.2</td>
+<td align="right">72s</td>
+</tr>
+</tbody>
+</table>
+<table>
+<thead>
+<tr class="header">
+<th align="left">Parameter</th>
+<th align="right">Tagesreise</th>
+<th align="right">Reise mit Ü.</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td align="left">β EMU · DE</td>
+<td align="right">14.484 ***</td>
+<td align="right">4.880 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β EMU · FR</td>
+<td align="right">15.137 ***</td>
+<td align="right">7.058 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β EMU · IT</td>
+<td align="right">9.791 ***</td>
+<td align="right">6.729 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β EMU · other</td>
+<td align="right">13.145 ***</td>
+<td align="right">6.368 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β pop · DE</td>
+<td align="right">0.120 **</td>
+<td align="right">0.770 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β pop · FR</td>
+<td align="right">0.047</td>
+<td align="right">0.500 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β pop · IT</td>
+<td align="right">0.796 ***</td>
+<td align="right">0.592 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β pop · other</td>
+<td align="right">0.052</td>
+<td align="right">0.656 ***</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit · DE</td>
+<td align="right">0.561 ***</td>
+<td align="right">−0.710 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β Erreichbarkeit · FR</td>
+<td align="right">0.054</td>
+<td align="right">−0.141 *</td>
+</tr>
+<tr class="odd">
+<td align="left">β Erreichbarkeit · IT</td>
+<td align="right">−0.823 ***</td>
+<td align="right">−0.579 ***</td>
+</tr>
+<tr class="even">
+<td align="left">β Erreichbarkeit · other</td>
+<td align="right">0.747 ***</td>
+<td align="right">−0.149</td>
+</tr>
+</tbody>
+</table>
+<p><code>*** p&lt;0.01  ** p&lt;0.05  * p&lt;0.10</code></p>
+<p><strong>Takeaway</strong>: the sign pattern shifts compared to the
+zone-level combined spec, and Reise mit Ü. changes the most. At zone
+level, <code>pop</code> was mostly null or weakly significant for Reise
+mit Ü. (only IT and “other” reached significance); at region level,
+<strong>all four nationality groups get large, positive, highly
+significant <code>pop</code> coefficients</strong> (0.50 to 0.77) — with
+only 101 much bigger units, “population” is now closer to “is this a
+major urban region at all” rather than distinguishing between thousands
+of small zones, so it picks up a much stronger, more universal draw
+toward populous regions. Erreichbarkeit for Reise mit Ü. keeps the same
+negative sign across DE/FR/IT as at zone level (overnight travellers
+still lean away from the most-accessible regions once EMU and population
+are controlled for), consistent with the zone-level finding. Tagesreise
+stays qualitatively similar to its zone-level counterpart — EMU dominant
+and highly significant throughout, <code>pop·IT</code> positive,
+<code>erreichbarkeit·IT</code> negative — though
+<code>erreichbarkeit·other</code> flips from null at zone level to
+strongly positive here (0.747***), plausibly because “other”-nationality
+day-trippers are a small, less homogeneous group (~710 respondents)
+where coarser regional aggregation changes which specific destinations
+get pooled together.</p>
+<p>Fit is not directly comparable to the zone-level ρ² figures above:
+this model differs on three dimensions at once (full sample instead of
+half, coarser destination unit, and a full 101-alternative choice set
+instead of 300 sampled alternatives), so the notably higher Tagesreise
+ρ² (0.434 vs. 0.307 at zone level) reflects some combination of all
+three, not evidence that regions fit better per se.</p>
+<p>Results file:
+<code>results_output/destination_mnl_amr_tagesreise_vs_reisemitue_pop_erreichbarkeit.csv</code></p>
+<hr />
 </div>
 <div id="attractivity-indexes-benzoni-et-al.-2026" class="section level2">
 <h2>Attractivity indexes (Benzoni et al. 2026)</h2>
@@ -1946,14 +2490,18 @@ non-Swiss-only EMU. <code>04_destination_choice.R</code>’s
 </div>
 <div id="file-index" class="section level2">
 <h2>File index</h2>
-<pre><code>data/
+<pre><code>data/input/                            Raw files, not produced by any script -- see README_script_map.md
+  Finale_Auswertungsdatenbank_AGQPV2015_V2.csv, zones_communes.gpkg, TTC.omx, RITA.omx, EGT.omx, ACT.omx
+
+data/output/                           Intermediary files: produced by one script, read by another
+  agqpv.csv                           Filtered/zone-matched survey (01_agent_generation.R)
   tt_light.fst                        Travel times for OD pairs actually observed in agqpv.csv
   tt_full.fst                         Travel times for all agqpv origins x ~8,000 reachable zones
   tt_full_logsum.fst                  tt_full.fst + EMU column (named `logsum`), pooled non-Swiss model
   tt_full_logsum_tagesreise.fst       tt_full.fst + EMU column, Tagesreise-only mode choice model
   tt_full_logsum_reisemitue.fst       tt_full.fst + EMU column, Reise-mit-Ü.-only mode choice model
 
-output/
+results_output/
   mode_choice_model.rds                                Fitted mode choice model, pooled non-Swiss
   mode_choice_model_tagesreise.rds                     Fitted mode choice model, Tagesreise only
   mode_choice_model_reisemitue.rds                      Fitted mode choice model, Reise mit Ü. only

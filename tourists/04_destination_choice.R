@@ -8,11 +8,15 @@
 #
 # logsum_j = ln(exp(V_car) + exp(V_pt)), the inclusive value / expected-maximum-
 #            utility from the mode choice model estimated in
-#            03_prepare_choice_data.R (data/output/tt_full_logsum.fst). This replaces
-#            a raw origin-destination travel time with the accessibility
-#            measure implied by the lower-level (mode) choice -- standard
-#            nested-logit practice (Ben-Akiva & Lerman / McFadden).
+#            03_estimate_logsum.R (data/output/tt_ausland_CH_logsum.fst,
+#            computed over tt_ausland_CH.fst -- origin abroad x destination in
+#            Switzerland only). This replaces a raw origin-destination travel
+#            time with the accessibility measure implied by the lower-level
+#            (mode) choice -- standard nested-logit practice (Ben-Akiva &
+#            Lerman / McFadden).
 # origin_i = tourist's border-entry zone (foreign zone, outside CH)
+# alt_j    = candidate destination zone, restricted to Swiss zones only
+#            (MAKROBEZ_STAAT == "CH" in zones_communes.gpkg)
 #
 # Swiss tourists (nationality == 1) excluded.
 #
@@ -38,6 +42,24 @@ agents   <- fread("data/output/agqpv.csv")
 agents[, agent_id := .I]
 zones_sf <- st_read("data/input/zones_communes.gpkg", quiet = TRUE)
 
+# Candidate destination alternatives are Swiss zones only -- zones_communes.gpkg
+# now also includes Ausland/LI zones (MAKROBEZ_STAAT), which are never valid
+# tourism destinations here and have no entry in the CH-only logsum lookup
+# below (tt_ausland_CH_logsum*.fst, built from tt_ausland_CH.fst).
+zones_sf <- zones_sf[zones_sf$MAKROBEZ_STAAT == "CH" & !is.na(zones_sf$MAKROBEZ_STAAT), ]
+
+# 7 / 7,966 CH zones have no STALAN2020 topology classification (apparently
+# newly-added/reclassified communes in the updated zones file) -- the topology
+# term has no NA-handling below (unlike logsum), so an NA here would produce a
+# non-finite utility whenever such a zone is sampled as a candidate. Excluded
+# from the candidate universe rather than imputed.
+n_zones_before_topo <- nrow(zones_sf)
+zones_sf <- zones_sf[!is.na(zones_sf$STALAN2020), ]
+if (nrow(zones_sf) < n_zones_before_topo) {
+  cat(sprintf("Dropped %d CH zone(s) with missing STALAN2020 topology from the candidate universe\n",
+      n_zones_before_topo - nrow(zones_sf)))
+}
+
 zone_attrs <- as.data.table(st_drop_geometry(zones_sf))[, .(NO, STALAN2020)]
 all_zones  <- zone_attrs$NO
 
@@ -55,10 +77,10 @@ NAT_LEVELS <- sort(unique(agents_noswiss$nat_group))
 cat(sprintf("Nationality groups: %s\n", paste(NAT_LEVELS, collapse = ", ")))
 print(agents_noswiss[, .N, by = nat_group][order(-N)])
 
-LOGSUM_CACHE <- "data/output/tt_full_logsum.fst"
+LOGSUM_CACHE <- "data/output/tt_ausland_CH_logsum.fst"
 if (!file.exists(LOGSUM_CACHE)) {
   stop(sprintf(
-    "%s not found. Run 03_prepare_choice_data.R first to estimate the mode choice model and build the logsum lookup.",
+    "%s not found. Run 03_estimate_logsum.R first to estimate the mode choice model and build the logsum lookup.",
     LOGSUM_CACHE))
 }
 tt_dt <- as.data.table(read_fst(LOGSUM_CACHE, columns = c("origin_zone", "dest_zone", "logsum")))
@@ -197,11 +219,12 @@ print_model_results <- function(estimates, model_name) {
 
 run_destination_model <- function(n_agents, n_alts, attr_vars = character(0), seed = 42, model_name = NULL,
                                    replace_agents = FALSE, agent_pool = agents_noswiss, logsum_dt = tt_dt,
-                                   include_topo = TRUE) {
+                                   include_topo = TRUE, interact_nationality = TRUE) {
   if (is.null(model_name)) {
     attr_tag   <- if (length(attr_vars) > 0) paste0("_", paste(attr_short_name(attr_vars), collapse = "-")) else ""
     topo_tag   <- if (!include_topo) "_notopo" else ""
-    model_name <- sprintf("destination_mnl_n%d_alts%d%s%s", n_agents, n_alts, attr_tag, topo_tag)
+    nat_tag    <- if (!interact_nationality) "_pooled" else ""
+    model_name <- sprintf("destination_mnl_n%d_alts%d%s%s%s", n_agents, n_alts, attr_tag, topo_tag, nat_tag)
   }
   attr_short <- attr_short_name(attr_vars)
 
@@ -212,19 +235,28 @@ run_destination_model <- function(n_agents, n_alts, attr_vars = character(0), se
 
   apollo_control <- list(
     modelName       = model_name,
-    modelDescr      = sprintf("MNL destination choice -- logsum x nat%s%s (n_agents=%d, n_alts=%d)",
-                               if (include_topo) ", topo x nat" else "",
-                               if (length(attr_vars) > 0) paste0(", ", length(attr_vars), " attr x nat") else "",
+    modelDescr      = sprintf("MNL destination choice -- logsum%s%s%s (n_agents=%d, n_alts=%d)",
+                               if (interact_nationality) " x nat" else " (pooled)",
+                               if (include_topo) (if (interact_nationality) ", topo x nat" else ", topo") else "",
+                               if (length(attr_vars) > 0) sprintf(", %d attr%s", length(attr_vars), if (interact_nationality) " x nat" else "") else "",
                                n_agents, n_alts),
     indivID         = "agent_id",
     outputDirectory = "results_output/"
   )
 
-  beta_names <- paste0("beta_logsum_", NAT_LEVELS)
-  if (include_topo)
-    beta_names <- c(beta_names, paste0("beta_topo2_", NAT_LEVELS), paste0("beta_topo3_", NAT_LEVELS))
-  if (length(attr_vars) > 0)
-    beta_names <- c(beta_names, as.vector(outer(paste0("beta_", attr_short), NAT_LEVELS, paste, sep = "_")))
+  if (interact_nationality) {
+    beta_names <- paste0("beta_logsum_", NAT_LEVELS)
+    if (include_topo)
+      beta_names <- c(beta_names, paste0("beta_topo2_", NAT_LEVELS), paste0("beta_topo3_", NAT_LEVELS))
+    if (length(attr_vars) > 0)
+      beta_names <- c(beta_names, as.vector(outer(paste0("beta_", attr_short), NAT_LEVELS, paste, sep = "_")))
+  } else {
+    beta_names <- "beta_logsum"
+    if (include_topo)
+      beta_names <- c(beta_names, "beta_topo2", "beta_topo3")
+    if (length(attr_vars) > 0)
+      beta_names <- c(beta_names, paste0("beta_", attr_short))
+  }
 
   apollo_beta  <- setNames(rep(0, length(beta_names)), beta_names)
   apollo_fixed <- c()
@@ -241,18 +273,31 @@ run_destination_model <- function(n_agents, n_alts, attr_vars = character(0), se
       if (include_topo) topo_j <- get(paste0("topo_", j))
 
       v <- 0
-      for (g in NAT_LEVELS) {
-        is_g <- (nat_group == g)
-        v <- v + get(paste0("beta_logsum_", g)) * logsum_j * is_g
+      if (interact_nationality) {
+        for (g in NAT_LEVELS) {
+          is_g <- (nat_group == g)
+          v <- v + get(paste0("beta_logsum_", g)) * logsum_j * is_g
+          if (include_topo) {
+            v <- v +
+              get(paste0("beta_topo2_", g)) * (topo_j == 2) * is_g +
+              get(paste0("beta_topo3_", g)) * (topo_j == 3) * is_g
+          }
+          if (length(attr_vars) > 0) {
+            for (k in seq_along(attr_vars)) {
+              attr_j <- get(paste0(attr_vars[k], "_", j))
+              v <- v + get(paste0("beta_", attr_short[k], "_", g)) * attr_j * is_g
+            }
+          }
+        }
+      } else {
+        v <- v + beta_logsum * logsum_j
         if (include_topo) {
-          v <- v +
-            get(paste0("beta_topo2_", g)) * (topo_j == 2) * is_g +
-            get(paste0("beta_topo3_", g)) * (topo_j == 3) * is_g
+          v <- v + beta_topo2 * (topo_j == 2) + beta_topo3 * (topo_j == 3)
         }
         if (length(attr_vars) > 0) {
-          for (k in seq_along(attr_vars)) {
-            attr_j <- get(paste0(attr_vars[k], "_", j))
-            v <- v + get(paste0("beta_", attr_short[k], "_", g)) * attr_j * is_g
+          for (kk in seq_along(attr_vars)) {
+            attr_j <- get(paste0(attr_vars[kk], "_", j))
+            v <- v + get(paste0("beta_", attr_short[kk])) * attr_j
           }
         }
       }
