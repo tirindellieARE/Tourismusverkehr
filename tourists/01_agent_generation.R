@@ -1,9 +1,9 @@
 library(data.table)
 library(sf)
 
-user = "MR"
+user = "CP"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
-if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/")}
+if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
 dir.create("data/output", recursive = TRUE, showWarnings = FALSE)
 
