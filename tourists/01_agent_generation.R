@@ -7,7 +7,7 @@ if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr
 
 dir.create("data/output", recursive = TRUE, showWarnings = FALSE)
 
-raw = fread("data/input/Finale_Auswertungsdatenbank_AGQPV2015_V2.csv")
+raw = fread("data/input/Finale_Auswertungsdatenbank_AGQPV2015_V2.csv", encoding = "Latin-1")
 agqpv= dplyr::filter(raw, STARTORTLANDISO != "CH")
 agqpv= dplyr::filter(agqpv, ZIELORTLAND == 1)
 agqpv= dplyr::filter(agqpv, FAHRTZWECK == 5)
