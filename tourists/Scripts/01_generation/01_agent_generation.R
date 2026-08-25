@@ -1,7 +1,7 @@
 library(data.table)
 library(sf)
 
-user = "CP"
+user = "MR"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
@@ -12,10 +12,10 @@ agqpv= dplyr::filter(raw, STARTORTLANDISO != "CH")
 agqpv= dplyr::filter(agqpv, ZIELORTLAND == 1)
 agqpv= dplyr::filter(agqpv, FAHRTZWECK == 5)
 
-agqpv = dplyr::select(agqpv, c(BEFRAGUNGSORT, WOHNORTLAND, WOHNORTORTLATITUDE, WOHNORTORTLONGITUDE, STARTORTLAND,
+agqpv = dplyr::select(agqpv, c(BEFRAGUNGSORTID, BEFRAGUNGSORT, WOHNORTLAND, WOHNORTORTLATITUDE, WOHNORTORTLONGITUDE, STARTORTLAND,
                                STARTORTORTLATITUDE, STARTORTORTLONGITUDE, ZIELORTORTLATITUDE, ZIELORTORTLONGITUDE,
                                ANZAHLUEBERNACHTUNGEN, VERKEHRSTRAEGER, GEWICHT))
-new_names = c("grenz", "nationality", "residence_lat", "residence_long", "origin_country", "origin_lat", "origin_long",
+new_names = c("grenz_id", "grenz", "nationality", "residence_lat", "residence_long", "origin_country", "origin_lat", "origin_long",
               "dest_lat", "dest_long", "n_nights", "border_mode", "weight")
 names(agqpv) = new_names
 agqpv = na.omit(agqpv)
@@ -123,6 +123,16 @@ cat("origin_zone_country breakdown:\n");    print(agqpv[, .N, by = origin_zone_c
 cat("dest_zone_country breakdown:\n");      print(agqpv[, .N, by = dest_zone_country][order(-N)])
 cat("residence_zone_country breakdown:\n"); print(agqpv[, .N, by = residence_zone_country][order(-N)])
 
+# NOTE: origin_zone_CH (the border-crossing zone, from geocoding `grenz` via
+# Scripts/01_generation/00_geocode_grenz.R -> data/output/grenz_coordinates.csv)
+# is intentionally NOT merged into agqpv here right now -- stepping back on
+# that per request. The geocoding script itself is untouched and its output
+# still exists on disk for whenever this is picked back up.
+
+# destination_zone (the tourist's actual in-CH destination) -- rename from
+# dest_zone for a name that reads the same way as origin_zone would.
+setnames(agqpv, "dest_zone", "destination_zone")
+
 # =============================================================================
 # CONSISTENCY FILTER
 # Drop observations that contradict "foreign tourist entering Switzerland":
@@ -130,23 +140,22 @@ cat("residence_zone_country breakdown:\n"); print(agqpv[, .N, by = residence_zon
 #     itself in Switzerland, not abroad
 #   - dest_zone_country != "CH"          : the reported destination point is
 #     not in Switzerland, despite the raw-data filter (ZIELORTLAND == 1)
-#   - nationality/residence mismatch     : nationality == 1 (Swiss) implies
-#     residence_zone_country should be "CH", and nationality != 1 implies it
-#     should be abroad ("Ausland"/"LI") -- drop rows where this disagrees
-#     (likely a residence coordinate geocoded just across the border)
+#   - residence == 1 (Swiss) implies residence_zone_country should not be "CH", 
+#     should be abroad ("Ausland"/"LI"), i.e. it should be tourist going to CH and not
+#     Swiss coming back home
 # =============================================================================
 
 drop_origin_ch <- agqpv$origin_zone_country == "CH"
 drop_dest_abroad <- agqpv$dest_zone_country != "CH"
-drop_residence_mismatch <- (agqpv$nationality == 1) != (agqpv$residence_zone_country == "CH")
+drop_residence_ch <- agqpv$residence_zone_country == "CH"
 
 cat(sprintf(
   "\nConsistency filter:\n  origin_zone_country == CH        : %d obs\n  dest_zone_country != CH           : %d obs\n  nationality/residence mismatch    : %d obs\n",
-  sum(drop_origin_ch), sum(drop_dest_abroad), sum(drop_residence_mismatch)
+  sum(drop_origin_ch), sum(drop_dest_abroad), sum(drop_residence_ch)
 ))
 
-to_drop <- drop_origin_ch | drop_dest_abroad | drop_residence_mismatch
-n_overlap <- sum(drop_origin_ch) + sum(drop_dest_abroad) + sum(drop_residence_mismatch) - sum(to_drop)
+to_drop <- drop_origin_ch | drop_dest_abroad | drop_residence_ch
+n_overlap <- sum(drop_origin_ch) + sum(drop_dest_abroad) + sum(drop_residence_ch) - sum(to_drop)
 cat(sprintf("  Total dropped (union): %d / %d obs (%d obs matched more than one criterion)\n", sum(to_drop), nrow(agqpv), n_overlap))
 
 agqpv <- agqpv[!to_drop]

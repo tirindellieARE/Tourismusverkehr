@@ -1,0 +1,140 @@
+# ============================================================
+# Configuration for the origin -> grenz travel-time pipeline
+# Edit paths and parameters here; scripts read from this file.
+# ============================================================
+
+# --- Input data ---
+input_csv: "data/output/agqpv.csv"    # your uploaded trip file (Latin-1 encoded)
+input_encoding: "latin1"
+
+# --- Column names in the input CSV (edit if your headers differ) ---
+cols:
+  origin_lat:   "origin_lat"
+  origin_long:  "origin_long"
+  dest_lat:     "dest_lat"          # tourist's actual reported destination latitude
+  dest_long:    "dest_long"         # tourist's actual reported destination longitude
+  grenz_name:   "grenz"             # border-crossing label ONLY -- not a coordinate
+  border_mode:  "border_mode_label" # observed choice: "road" / "rail"
+  weight:       "weight"
+  dest_zone:    "destination_zone" # renamed from dest_zone in 01_agent_generation.R
+  origin_zone_country:    "origin_zone_country"    # CH / LI / Ausland, from 01_agent_generation.R
+  residence_zone_country: "residence_zone_country" # CH / LI / Ausland, from 01_agent_generation.R
+
+# --- Coordinate reference system of the input lat/long ---
+input_crs: 4326                      # WGS84
+
+# --- OSM extract (targeted country merge, clipped to bbox) ---
+# Countries whose Geofabrik extracts will be downloaded and merged.
+# Adjust to match where your origins actually fall.
+osm_countries:
+  - name: "switzerland"
+    url: "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf"
+  - name: "germany"
+    url: "https://download.geofabrik.de/europe/germany-latest.osm.pbf"
+  - name: "france"
+    url: "https://download.geofabrik.de/europe/france-latest.osm.pbf"
+  - name: "italy"
+    url: "https://download.geofabrik.de/europe/italy-latest.osm.pbf"
+  - name: "austria"
+    url: "https://download.geofabrik.de/europe/austria-latest.osm.pbf"
+  - name: "spain"
+    url: "https://download.geofabrik.de/europe/spain-latest.osm.pbf"
+# bbox padding (degrees) added around the extent of all points before clipping
+bbox_pad_deg: 0.25
+
+# --- GTFS feeds for PT routing (national sources) ---
+# NOTE: some portals require manual download / registration. URLs that are
+# stable direct links are fetched automatically; others are flagged.
+gtfs_feeds:
+  - name: "ch"
+    url: "https://data.opentransportdata.swiss/en/dataset/timetable-2026-gtfs2020/permalink" # old opentransportdata.swiss/... permalink 404s -- CKAN platform moved to data.opentransportdata.swiss in Jan 2025
+    auto: true
+  - name: "de"
+    url: "https://download.gtfs.de/germany/free/latest.zip"
+    auto: true
+  - name: "fr"
+    url: "https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip" # SNCF national (TGV/Intercites/TER)
+    auto: true
+  - name: "it"
+    url: "https://www.dati.lombardia.it/download/3z4k-mxz9/application/zip" # Trenord (Lombardia regional rail) -- covers the Chiasso/Ticino and Tirano/Bernina-Poschiavo corridors; NOT Piemonte (Domodossola) or Valle d'Aosta
+    auto: true
+  - name: "es"
+    url: ""      # Renfe / national - set if needed for Spanish origins
+    auto: false
+  - name: "at"
+    url: ""      # OeBB requires a terms-of-use click-through on data.oebb.at before the
+                 # download URL is revealed -- not scriptable. Accept the terms manually,
+                 # download the zip, and place it at data/gtfs/at.gtfs.zip yourself.
+    auto: false
+
+# --- PT routing parameters (r5r) ---
+pt:
+  departure_date: "2026-09-15"       # a representative weekday (Tuesday)
+  departure_time: "10:00:00"         # OFF-PEAK
+  time_window_minutes: 120           # r5r samples departures across this window
+  percentile: 50                     # median travel time
+  max_trip_duration_min: 600         # cap (10h) for long international trips
+  walk_speed_kmh: 4.0
+  max_walk_time_min: 30              # access/egress walking cap
+  modes: ["WALK", "TRANSIT"]
+
+# --- JVM memory for r5r (set BEFORE library(r5r) in scripts) ---
+java_max_mem: "150G"                 # 48G stalled/OOM'd building the network (14.8GB OSM + 5 GTFS feeds); raised again
+
+# --- PT routing via Google Routes API (alternative to r5r above) ---
+# See Scripts/02_travel_time/04_pt_google.R for the full writeup of why this
+# exists (R5's 975,000 km^2 area limit + a slow Windows file-flush bottleneck
+# forced a tiled approach that takes ~90 min/tile; this is a from-scratch
+# alternative for the PT leg only -- car times are unaffected).
+# Needs a Google Cloud project with billing enabled and the Routes API turned
+# on. The key is read from an ENVIRONMENT VARIABLE -- never put a real key in
+# this file, it's checked into git.
+google:
+  api_key_env: "GOOGLE_MAPS_API_KEY"   # name of the env var holding your key
+  requests_per_second: 8               # throttle, well under Google's rate limits
+  dry_run_limit: 5                     # ONLY query the first N pairs -- real safety
+                                        # default given this costs real money. Set to
+                                        # 0 to process every pair once you've checked
+                                        # a small batch looks right.
+
+# --- Car routing (OSRM) ---
+osrm:
+  # Local OSRM server base URL (see 03_car_osrm.R for how to start it).
+  # Started via the R package osrm.backend (no Docker needed) on port 5001 --
+  # its default port, since Docker isn't available on this machine.
+  server: "http://127.0.0.1:5001"
+  profile: "driving"
+  # Chunk sizes for table (many-to-many) queries in
+  # 03b_car_osrm_ausland_zones.R. This server's actual --max-table-size is
+  # 10,000 matrix cells (NOT the 8,000,000 documented OSRM default -- found
+  # empirically: requests over ~10,000 cells get a clean 400 "TooBig"
+  # error). There's a SECOND, undocumented limit around ~2,200-2,400 total
+  # coordinates (src+dst combined) that instead kills the connection
+  # outright ("empty reply from server", no clean error) -- almost
+  # certainly a URL-length ceiling in osrm-routed's request parser, not an
+  # application-level check. Both must be respected. Within those limits,
+  # a roughly BALANCED src/dst split routes ~4x faster per cell than a
+  # skewed one (0.15s/1000 cells at src=30/dst=330 vs 0.64s/1000 cells at
+  # src=5/dst=1980, measured directly against this server) -- likely
+  # because OSRM's many-to-many search cost scales with sources, so many
+  # sources x few destinations pays that cost far more times per cell.
+  table_origin_chunk: 30
+  table_dest_chunk: 330
+
+# --- Output files ---
+# NOTE: pairs/row_map/car_times all carry an "_agqpv" suffix because they
+# cover only the origin -> destination pairs that occur in agqpv.csv (real
+# respondent trips). This is one of three travel-time datasets, mirroring
+# 06_build_tt_lookups.R's tt_agqpv/tt_ausland_CH/tt_CH_CH split -- see
+# car_times_ausland_ch/origins_ausland below for the second (every ausland
+# origin -> every Swiss zone centroid, needed for the destination-choice
+# logsum). There is no OSRM equivalent of tt_CH_CH: domestic CH->CH car
+# times still come from the OMX matrices, not from routing.
+out:
+  pairs: "data/output/pairs_to_route_agqpv.csv"
+  row_map: "data/output/row_to_pair_agqpv.csv"
+  car_times: "data/output/car_times_agqpv.csv"
+  pt_times: "data/output/pt_times.csv"
+  final: "data/output/model_input.csv"
+  origins_ausland: "data/output/origins_ausland.csv"
+  car_times_ausland_ch: "data/output/car_times_ausland_CH.fst"
