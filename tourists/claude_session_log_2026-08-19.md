@@ -180,4 +180,185 @@ dataset)**.
 geometric step entirely, since `agqpv.csv` is already guaranteed
 origin-abroad by the upstream consistency filter in `01_agent_generation.R`.
 
-**Status: waiting on your go-ahead to make this edit to `01_filter.R`.**
+**Status: fix applied.** `01_filter.R` was rewritten to filter on
+`origin_zone_country`/`residence_zone_country` instead of the Natural Earth
+polygon (also requiring `residence_zone_country` outside CH). You then made
+further edits of your own on top of that: the filter step moved further
+upstream into `01_agent_generation.R`'s consistency check, so `01_filter.R`
+now just does `ext = raw` with a comment explaining why (the file is already
+guaranteed origin-abroad by the time it gets there). The `grenz` /
+`grenz_lat`/`grenz_long` columns were also renamed/removed in favor of
+`dest_lat`/`dest_long` (the tourist's actual reported destination, not the
+border-crossing point) across this whole pipeline — see Part 3.
+
+*(Note: Part 1 — the git force-push situation on the other machine — was
+never confirmed resolved in this session. No `git status` report was
+received back from Step 1 on that machine, so its status there is unknown
+as of this update.)*
+
+---
+
+## Part 3 — Pipeline rename: "origin → grenz" to "origin → destination"
+
+Once `grenz` (the border crossing) was confirmed to be just a descriptive
+label — not the actual routing target — and no longer the destination
+column in the data (destination is the tourist's real reported
+`dest_lat`/`dest_long`, median ~63km from the border crossing, not the same
+point), every `grenz`-as-coordinate reference was renamed throughout
+`Scripts/02_travel_time/` (`02_download.R`'s bbox computation, `03_car_osrm.R`,
+`04_pt_r5r.R`, column names in `config.yml`). `grenz` itself is kept as a
+separate, non-coordinate label column (which border crossing a trip used —
+real, useful metadata, just never used as a coordinate).
+
+## Part 4 — `02_download.R`: OSM + GTFS acquisition
+
+Downloads/merges/clips OSM extracts (Geofabrik, per-country) to a bounding
+box computed from `pairs_to_route_agqpv.csv`, and downloads GTFS feeds
+(national PT schedules) for the countries in `config.yml`.
+
+Bugs fixed while first running it:
+- A relative-path bug (`source("R/00_setup.R")` → should be
+  `source("Scripts/02_travel_time/00_setup.R")`) — present in every script
+  in this folder at the time, fixed in all of them.
+- **60s default download timeout was too short** for the ~4.8GB Germany OSM
+  extract — raised to `max(1800, getOption("timeout"))`, plus added
+  delete-partial-file-on-error logic so a failed download doesn't leave a
+  corrupt file that looks "already downloaded" on the next run.
+- **The Swiss GTFS permalink 404'd** — opentransportdata.swiss's CKAN
+  platform moved to `data.opentransportdata.swiss` in Jan 2025; found and
+  set the new URL in `config.yml`.
+- **FR/IT GTFS feeds found and added** (SNCF national for FR; Trenord/
+  Lombardia regional rail for IT — covers Chiasso/Ticino and Tirano/
+  Bernina-Poschiavo, not Piemonte or Valle d'Aosta). **ES/AT require manual
+  download** (no stable direct-link URL) — AT (ÖBB) specifically requires
+  accepting a terms-of-use click-through on `data.oebb.at` before the
+  download link is even revealed, so it's not scriptable; documented in
+  `config.yml` with instructions to download by hand and place the zip at
+  `data/gtfs/at.gtfs.zip`.
+- Caching behaviour (asked about, then documented in `README.md`): every
+  step only checks whether its output file already exists — never checks
+  whether the remote source changed. Re-running after a partial run resumes
+  where it left off; re-running after a full run does nothing. **Gotcha:**
+  `network.osm.pbf`'s bbox is fixed at whatever `pairs_to_route_agqpv.csv`
+  looked like the moment `02_download.R` last ran — if the filter logic
+  changes afterward, the bbox is not silently recomputed; the relevant file
+  in `data/osm/`/`data/gtfs/` has to be deleted by hand to force a rebuild.
+
+## Part 5 — Car routing: from Docker to `osrm.backend`
+
+**Docker was the first plan** (start a local OSRM container, route against
+it) — ruled out immediately: **Docker isn't available on this machine.**
+
+**Landed on the R package `osrm.backend`** (downloads real OSRM binaries for
+Windows, no Docker/compiler needed) after comparing it against native OSRM
+binaries run by hand and a hosted API (priced out: Google Routes API,
+Essentials tier, $5/1,000 requests, 10,000 free/month). Two Windows-specific
+bugs fixed:
+- `osrm_start()` launches `osrm-routed.exe` as a child of the calling R
+  process — on Windows that child dies the moment the parent R session
+  exits. Fixed by running the start-and-serve script as a detached
+  background process that blocks forever, instead of a one-off `Rscript -e`.
+- `osrm` package v5.0.0 changed `osrmRoute()`'s return type to a named
+  numeric vector (no more `$duration`/`$distance` accessors) — fixed the
+  accessor syntax in `03_car_osrm.R`.
+
+**Result: `car_times_agqpv.csv`** — the 7,726 unique origin/destination
+pairs occurring in `agqpv.csv`, routed one-by-one via `osrmRoute()`. 0
+missing. Full detail on this and everything below in the dedicated
+[`routing_readme.md`](routing_readme.md) (added once the routing story
+across both modes got long enough to need its own file).
+
+## Part 6 — PT routing: r5r's area limit, then tiling, then abandoned for time
+
+Attempted a single-network `r5r` build for the whole study area first — it
+**failed outright**: R5 hard-rejects any street network over 975,000 km²;
+the actual extent (CH+DE+FR+IT+AT+part of ES) is ~3.6M km². Not a
+performance issue, a hard limit — found after a ~2 hour failed build.
+
+Redesigned into a **recursive geographic tiling** approach (split into ~40
+tiles under an area cap, each with its own osmium-clipped OSM extract and
+only the GTFS feeds relevant to that tile's actual border corridor). Fixed
+along the way: an Austrian GTFS zip with files nested in a subfolder
+(R5's parser requires them at zip root), Swiss GTFS `route_type=1500`
+("Taxi") routes that R5 doesn't support (silently broke every tile until
+removed), and a bbox-overlap GTFS-selection heuristic that turned out to be
+geometrically useless (replaced with corridor-based selection from the
+survey's real `GRENZABSCHNITT` data). Also chased down what looked like a
+hung tile build — actually a genuine (if very slow) Windows-specific
+`MappedByteBuffer.force()` disk-flush bottleneck, confirmed via a `jstack`
+thread dump rather than assumed, and partially mitigated by shrinking the
+tile area cap.
+
+**Even with every fix applied, each tile took ~90 minutes** — ~60 hours for
+the full run. The tiled job was left running, was genuinely progressing
+(healthy through tile 8+/40), but was ultimately **killed** in favor of
+refocusing on car routing, since that timeline was judged too slow to be
+worth waiting on right now.
+
+**Wrote (but did not run) `04_pt_google.R`** as a faster alternative: one
+Google Routes API call per pair instead of building any network. Verified
+against Google's own docs that plain transit routing bills as Essentials
+tier ($5/1,000 requests, 10,000 free/month) — this whole dataset (7,726
+pairs) fits the free tier for one run. Built with a hard dry-run safety
+gate, resumability, and checkpointing, but **zero API calls have been made**
+— running it needs a Google Cloud project with billing + the Routes API
+enabled, and a `GOOGLE_MAPS_API_KEY` environment variable, neither of which
+has been set up yet.
+
+Full write-up of every routing attempt (car and PT), including the exact
+numbers behind each decision, is in
+[`routing_readme.md`](routing_readme.md).
+
+## Part 7 — Scaling car routing up: the ausland → CH-zone dataset
+
+Existing `car_times_agqpv.csv` only covers the origin/destination pairs
+that occur in real survey trips — enough for a mode-choice logsum on
+observed trips, but not enough for a destination-choice model, which needs
+a travel time from every ausland entry point to every *candidate* Swiss
+zone. Mirrors `06_build_tt_lookups.R`'s `tt_ausland_CH.fst` (built from the
+OMX demand-model matrices) but via real OSRM road routing instead.
+
+New script `03b_car_osrm_ausland_zones.R`: 3,037 unique ausland origins
+(deduplicated from `agqpv.csv`) × 7,966 Swiss zone centroids (from
+`zones_communes.gpkg`) = 24,192,742 pairs, routed via OSRM's `/table`
+(many-to-many) service rather than one-by-one — at that volume a one-by-one
+loop would take days. Getting this to actually work meant empirically
+discovering **two undocumented limits on this OSRM server**: a
+`--max-table-size` of 10,000 matrix cells (not the 8,000,000 the OSRM docs
+describe as default — this server is evidently configured, or defaults,
+much lower), and a separate ~2,200-2,400-total-coordinate ceiling that
+kills the connection outright (empty reply, no clean error) rather than
+rejecting cleanly — almost certainly a URL-length limit in osrm-routed's
+request parser, hit before OSRM's own size check even runs. Also found that
+a *balanced* origin/destination chunk shape routes ~4x faster per cell than
+a skewed one. Full numbers in `routing_readme.md`.
+
+**Result:** `car_times_ausland_CH.fst` (24,192,742 rows) + `origins_ausland
+.csv` (the 3,037 unique origins), 0 missing, computed in ~87 minutes.
+
+Renamed the agqpv-side outputs to make the two datasets unambiguous:
+`pairs_to_route.csv` → `pairs_to_route_agqpv.csv`, `row_to_pair.csv` →
+`row_to_pair_agqpv.csv`, `car_times.csv` → `car_times_agqpv.csv` (config.yml
+paths updated; no script code changes needed since they all read the path
+from `cfg$out$*`). `README.md` updated to match, including correcting an
+outdated "origins are zone centroids" limitation note that no longer
+applied.
+
+## Part 8 — Committed and pushed
+
+Discovered along the way that the entire `Scripts/` directory (this whole
+pipeline, across this session and earlier ones) had never actually been
+committed to git — `git status` showed 33 files "deleted" at the repo root
+(really: moved into `Scripts/` subfolders at some earlier point, but never
+`git add`ed) plus the whole `Scripts/` tree as untracked. Committed
+everything (`git` correctly detected the moves as renames, not
+delete+recreate) as `97a0dab`, "Reorganize scripts into Scripts/
+subfolders; add full car+PT travel-time pipeline", and pushed to
+`origin/master`. An unrelated sibling folder (`../benzoni_thesis/`, its own
+separate nested git repo) was deliberately left untouched.
+
+**Status: all of the above is complete and pushed.** Outstanding /
+not-yet-done: the tiled r5r PT job (killed, tiles 1-7 have stale all-NA
+results from before the CH GTFS fix, tiles 8+ never finished); the Google
+PT script (written, never run — needs an API key); `05_join.R` has not yet
+been run against real PT data.
