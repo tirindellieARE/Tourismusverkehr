@@ -104,8 +104,8 @@ osrm:
   # its default port, since Docker isn't available on this machine.
   server: "http://127.0.0.1:5001"
   profile: "driving"
-  # Chunk sizes for table (many-to-many) queries in
-  # 03b_car_osrm_ausland_zones.R. This server's actual --max-table-size is
+  # Chunk sizes for table (many-to-many) queries in the ausland-to-zone
+  # dataset in 03_car_osrm.R. This server's actual --max-table-size is
   # 10,000 matrix cells (NOT the 8,000,000 documented OSRM default -- found
   # empirically: requests over ~10,000 cells get a clean 400 "TooBig"
   # error). There's a SECOND, undocumented limit around ~2,200-2,400 total

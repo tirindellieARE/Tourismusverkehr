@@ -14,8 +14,9 @@ Scripts/02_travel_time/
 ├─ 00_setup.R                       # packages, config, helpers (source first, always)
 ├─ 01_filter.R                      # unique origin→destination pairs (agqpv trips only)
 ├─ 02_download.R                    # OSM merge/clip + GTFS download
-├─ 03_car_osrm.R                    # car times, agqpv pairs only, via local OSRM
-├─ 03b_car_osrm_ausland_zones.R     # car times, every ausland origin → every CH zone centroid
+├─ 03_car_osrm.R                    # car times via local OSRM -- agqpv pairs AND every
+│                                    #   ausland origin → every CH zone centroid (two
+│                                    #   datasets, one script: they share all their setup)
 ├─ 04_pt_r5r.R                      # PT times via r5r (off-peak), agqpv pairs only
 ├─ 04_pt_google.R                   # PT times via Google Routes API (alternative to 04_pt_r5r.R)
 ├─ 05_join.R                        # merge agqpv car/PT times back to every row → model_input.csv
@@ -35,8 +36,7 @@ then from an R session **inside your activated conda `r5` env**:
 source("Scripts/02_travel_time/01_filter.R")     # → pairs_to_route_agqpv.csv, row_to_pair_agqpv.csv
 source("Scripts/02_travel_time/02_download.R")   # → data/osm/network.osm.pbf, data/gtfs/*.zip
 # start the OSRM server (see 03_car_osrm.R header) in a separate terminal
-source("Scripts/02_travel_time/03_car_osrm.R")   # → car_times_agqpv.csv (agqpv pairs only)
-source("Scripts/02_travel_time/03b_car_osrm_ausland_zones.R")  # → origins_ausland.csv, car_times_ausland_CH.fst
+source("Scripts/02_travel_time/03_car_osrm.R")   # → car_times_agqpv.csv AND origins_ausland.csv, car_times_ausland_CH.fst
 # run 04 in a FRESH R session (JVM heap must be set before r5r loads)
 source("Scripts/02_travel_time/04_pt_r5r.R")     # → pt_times.csv (or 04_pt_google.R as an alternative)
 source("Scripts/02_travel_time/05_join.R")       # → model_input.csv
@@ -46,11 +46,15 @@ source("Scripts/02_travel_time/05_join.R")       # → model_input.csv
 carry the `_agqpv` suffix because they cover only the origin→destination pairs
 that actually occur in agqpv.csv (real respondent trips) -- enough for a
 mode-choice logsum on observed trips, but not enough for a destination-choice
-model. `03b_car_osrm_ausland_zones.R` fills that gap: every unique ausland
+model. `03_car_osrm.R`'s second dataset fills that gap: every unique ausland
 origin (deduplicated from agqpv.csv, ~3,037) routed to every Swiss zone
 centroid (~7,966, from `data/input/zones_communes.gpkg`) -- the OSRM
 equivalent of `06_build_tt_lookups.R`'s `tt_ausland_CH.fst`, but from real
-road routing instead of the OMX matrices. Its output is normalized rather
+road routing instead of the OMX matrices. **Note this is not a subset/superset
+relationship**: the agqpv dataset's destinations are respondents' actual
+reported points, while this second dataset's destinations are zone
+centroids -- different coordinates for the same conceptual zone, so neither
+dataset can be derived from the other. Its output is normalized rather
 than one row per origin: `car_times_ausland_CH.fst` has columns
 `origin_id, zone_no, car_time_min, car_dist_km`; `origin_id` resolves via
 `origins_ausland.csv` and `zone_no` joins back to `NO` in
@@ -102,8 +106,8 @@ this itself.
    destination coordinate**, not a zone centroid (verified: median ~63km
    from the corresponding border crossing, not the same point). Car and PT
    both use the same destination point, so the modal comparison stays
-   consistent. `03b_car_osrm_ausland_zones.R` is the exception: it routes to
-   Swiss **zone centroids** deliberately, because it needs a time to every
+   consistent. `03_car_osrm.R`'s second (ausland-to-zone) dataset is the
+   exception: it routes to Swiss **zone centroids** deliberately, because it needs a time to every
    candidate zone for the destination-choice model, not just the one each
    respondent visited.
 2. **`grenz` is a label, not a coordinate.** Some `grenz` values are
