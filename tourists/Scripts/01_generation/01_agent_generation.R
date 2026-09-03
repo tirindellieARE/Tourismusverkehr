@@ -1,7 +1,7 @@
 library(data.table)
 library(sf)
 
-user = "MR"
+user = "CP"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
@@ -13,10 +13,10 @@ agqpv= dplyr::filter(agqpv, ZIELORTLAND == 1)
 agqpv= dplyr::filter(agqpv, FAHRTZWECK == 5)
 
 agqpv = dplyr::select(agqpv, c(BEFRAGUNGSORTID, BEFRAGUNGSORT, WOHNORTLAND, WOHNORTORTLATITUDE, WOHNORTORTLONGITUDE, STARTORTLAND,
-                               STARTORTORTLATITUDE, STARTORTORTLONGITUDE, ZIELORTORTLATITUDE, ZIELORTORTLONGITUDE,
+                               STARTORTORTLATITUDE, STARTORTORTLONGITUDE, ZIELORTORTLATITUDE, ZIELORTORTLONGITUDE, ZIELORTGEONAMESID_BFSNUMMER,
                                ANZAHLUEBERNACHTUNGEN, VERKEHRSTRAEGER, GEWICHT))
 new_names = c("grenz_id", "grenz", "nationality", "residence_lat", "residence_long", "origin_country", "origin_lat", "origin_long",
-              "dest_lat", "dest_long", "n_nights", "border_mode", "weight")
+              "dest_lat", "dest_long", "dest_commune","n_nights", "border_mode", "weight")
 names(agqpv) = new_names
 agqpv = na.omit(agqpv)
 
@@ -44,28 +44,76 @@ if (nrow(zones_sf) < n_zones_before) {
   cat(sprintf("Dropped %d zone(s) with missing MAKROBEZ_STAAT\n", n_zones_before - nrow(zones_sf)))
 }
 
+
 assign_zones <- function(lon, lat, zones) {
   pts <- st_as_sf(
     data.frame(lon = lon, lat = lat),
     coords = c("lon", "lat"),
     crs    = 4326
   )
-  pts    <- st_transform(pts, st_crs(zones))
+  
+  pts <- st_transform(pts, st_crs(zones))
+  
+  # First: assign points that are actually inside a zone
   joined <- st_join(pts, zones[, "NO"], left = TRUE)
-
-  # Fallback: snap unmatched points to the nearest zone polygon
+  
+  # Flag for points that are not inside any zone
+  joined$zone_mismatch <- FALSE
+  
   na_idx <- which(is.na(joined$NO))
+  
   if (length(na_idx) > 0) {
-    nearest        <- st_nearest_feature(pts[na_idx, ], zones)
+    
+    # Find nearest zone for unmatched points
+    nearest <- st_nearest_feature(pts[na_idx, ], zones)
+    
+    # Assign nearest zone
     joined$NO[na_idx] <- zones$NO[nearest]
+    
+    # These points are outside the zone they were assigned to
+    joined$zone_mismatch[na_idx] <- TRUE
   }
-
-  joined$NO
+  
+  list(
+    zone = joined$NO,
+    mismatch = joined$zone_mismatch
+  )
 }
 
-agqpv[, origin_zone    := assign_zones(origin_long,    origin_lat,    zones_sf)]
-agqpv[, dest_zone      := assign_zones(dest_long,      dest_lat,      zones_sf)]
-agqpv[, residence_zone := assign_zones(residence_long, residence_lat, zones_sf)]
+
+# Origin
+origin_result <- assign_zones(
+  agqpv$origin_long,
+  agqpv$origin_lat,
+  zones_sf
+)
+
+agqpv[, origin_zone := origin_result$zone]
+agqpv[, origin_zone_mismatch := origin_result$mismatch]
+
+
+# Destination
+dest_result <- assign_zones(
+  agqpv$dest_long,
+  agqpv$dest_lat,
+  zones_sf
+)
+
+agqpv[, dest_zone := dest_result$zone]
+agqpv[, dest_zone_mismatch := dest_result$mismatch]
+
+
+# Residence
+residence_result <- assign_zones(
+  agqpv$residence_long,
+  agqpv$residence_lat,
+  zones_sf
+)
+
+agqpv[, residence_zone := residence_result$zone]
+agqpv[, residence_zone_mismatch := residence_result$mismatch]
+
+
 
 # Summary of unmatched points per coordinate type
 cat(sprintf(
@@ -161,7 +209,7 @@ cat(sprintf("  Total dropped (union): %d / %d obs (%d obs matched more than one 
 agqpv <- agqpv[!to_drop]
 cat(sprintf("Remaining after consistency filter: %d obs\n", nrow(agqpv)))
 
-fwrite(agqpv, "data/output/agqpv.csv")
+fwrite(agqpv, "data/output/agqpv_CHcommune.csv")
 
 # set scaling factor for computational reasons
 SCALING_FACTOR = 1000
