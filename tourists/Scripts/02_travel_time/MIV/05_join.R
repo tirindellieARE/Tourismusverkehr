@@ -3,10 +3,10 @@
 # Merge car + PT times onto the unique pairs, then expand back to every
 # observation via row_to_pair. Produces the final mode-choice model input.
 #
-# Run:  source("Scripts/02_travel_time/00_setup.R"); source("Scripts/02_travel_time/05_join.R")
+# Run:  source("Scripts/00_setup.R"); source("Scripts/02_travel_time/05_join.R")
 # ============================================================
 
-source("Scripts/02_travel_time/00_setup.R")
+source("Scripts/00_setup.R")
 
 # --- Load pieces -------------------------------------------------------------
 pairs   <- readr::read_csv(cfg$out$pairs,     show_col_types = FALSE)

@@ -43,10 +43,10 @@
 # rerun after an interruption (or after raising dry_run_limit) does not
 # re-pay for work already done.
 #
-# Run:  source("Scripts/02_travel_time/00_setup.R"); source("Scripts/02_travel_time/04_pt_google.R")
+# Run:  source("Scripts/00_setup.R"); source("Scripts/02_travel_time/04_pt_google.R")
 # ============================================================
 
-source("Scripts/02_travel_time/00_setup.R")
+source("Scripts/00_setup.R")
 
 if (!requireNamespace("httr2", quietly = TRUE)) {
   install.packages("httr2", repos = "https://cloud.r-project.org")

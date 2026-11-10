@@ -146,6 +146,135 @@ the Routes API enabled, plus a `GOOGLE_MAPS_API_KEY` environment variable
 (see the script's header for details). This remains the fastest available
 path to real PT travel times if/when it's needed.
 
+### Option: r5r, single-country-pair rail-only experiments (CH+Italy, CH+France)
+Revisited PT routing after the tiled approach was abandoned, with a narrower
+goal: instead of one network for all 5 countries, build a much smaller
+network for just Switzerland plus ONE neighbour, restricted to the RAIL
+mode only (via r5r's `mode = c("WALK", "RAIL")` at query time -- R5 uses
+GTFS purely for vehicle movement and OSM only for walk/access legs, so
+this needed no GTFS or OSM filtering at build time, just a query-time
+mode restriction). Origins are explicitly joined to their nearest actual
+rail stop (a GTFS stop referenced by a rail-type `stop_times` row, not
+just any geocoded point) before routing station-to-destination, so the
+station used for each trip is visible and inspectable rather than
+implicit inside r5r's own access-leg search.
+
+**Bounding-box reality check, both times**: the full population of a
+neighbour country's origins unioned with all CH destinations exceeds
+R5's 975,000 km² limit in both cases (Italy: 1,236,324 km²; France:
+1,227,072 km²) -- always check this before building, per the header
+comments in both `pt_r5r_rail_ch_it.R` and `pt_r5r_rail_ch_fr.R`. A
+country-specific split was needed in both cases, but the split criterion
+differs by geography:
+- **Italy**: a simple origin-latitude cutoff (>= 44°N, "North Italy")
+  works cleanly, because Italy's outliers are almost entirely to the
+  south (Sicily, Calabria, Puglia). Covers 2,622 / 2,786 rows (94.1%),
+  bbox 296,927 km². The excluded south/central 164 rows do NOT shrink to
+  fit even after removing Sicily specifically (1,212,831 km² either way)
+  -- confirmed the real constraint is mainland Calabria/Puglia, not the
+  island, so a latitude-only fix doesn't rescue that cluster.
+- **France**: a latitude cutoff does NOT work -- France's outliers spread
+  in both latitude AND longitude (Brittany, Paris, the south coast), not
+  just north-south. Used a REGION-based split instead: all 987 unique
+  French origins were reverse-geocoded (Transitous's `/reverse-geocode`
+  endpoint, same one used in `geocode_origins.R`) to get their real
+  French region, and the three regions that actually border Switzerland
+  (Auvergne-Rhône-Alpes, Grand Est, Bourgogne-Franche-Comté) were kept --
+  3,019 / 3,631 rows (83.1%), bbox 400,747 km².
+
+**CH+Italy build**: 42.6 min, 6,383 rail stops (5,889 CH + only 494 IT --
+`it.gtfs.zip` is Trenord/Lombardia regional rail only, not national).
+100-tourist sample: 56/100 got a rail time. Two distinct failure causes
+found in the sample:
+1. 7/7 nearest-stations with a `missingSLOID_...` stop ID failed 100% of
+   the time -- placeholder/orphan stop records in the Trenord feed
+   (geocoded as real locations, but with zero actual `stop_times`).
+2. The dominant cause turned out to be **missing regional GTFS
+   coverage**, confirmed by reverse-geocoding all 550 unique North-Italy
+   origins to real regions: only Lombardia (55.5% of origins) has ANY
+   feed loaded. Piemonte (19.5%), Trentino-Alto Adige (6.5%), Veneto
+   (4.9%), Emilia-Romagna (4.4%), Liguria (3.3%), Valle d'Aosta (2.7%),
+   and Friuli-Venezia Giulia (1.6%) -- 43% of origins combined -- had
+   ZERO regional rail GTFS loaded at all.
+   Researched replacement feeds: found and verified working direct-
+   download GTFS for **Piemonte**
+   (`https://api.smartdatanet.it/api/ServizioProgrammatoDelTrasportoPubblicoRegionePiemonteTreniRegionali_5188/attachment/5187/1/GTFS_RAIL_IT_PIE.zip`)
+   and **Liguria**
+   (`https://srvcarto.regione.liguria.it/dtuff/download_statico/opendata/trasporti/GTFS/GTFS-IT-ITC3-TRENITALIA-20260614-20261212-pf.zip`,
+   both confirmed valid GTFS zips by direct download+inspection, not just
+   a search result) -- would bring coverage from 55.5% to ~78%. The
+   remaining 5 regions (~20% of origins) are being migrated to
+   **NeTEx-only** distribution via Italy's National Access Point
+   (nap-1926.it) under the EU MMTIS regulation -- a national Trenitalia
+   NeTEx L1 dataset was found and confirmed downloadable (1.72GB XML, no
+   auth needed), but no NeTEx→GTFS converter with confirmed support for
+   Italy's specific profile (EPIP-based) was found; the tools that do
+   exist (`entur/netex-gtfs-converter-java`, `entur/damu`,
+   `theoremus-urban-solutions/netex-gtfs-converter`) are built for other
+   countries' profiles or are very new/unproven. **Status: Piemonte+
+   Liguria links verified but not yet merged in; NeTEx conversion
+   researched but not attempted.**
+
+**CH+France build**: 60.3 min, 10,560 rail stops (5,889 CH + 4,671 FR --
+`fr.gtfs.zip` is SNCF's genuinely NATIONAL feed, unlike Italy's regional-
+only one; no missing-region problem here). 100-tourist sample: only
+37/100 got a rail time -- worse than Italy despite far better raw data
+coverage, which turned out to have nothing to do with data completeness:
+1. Re-routing the same 100 with the 30-min walk cap raised to 240 min
+   dropped missing from 63 to 40 -- so the walk cap directly explained
+   23 failures, fewer than a straight-line-distance estimate suggested
+   (real street-network walking distance differs from as-the-crow-flies).
+2. Investigating the remaining 40 via `r5r::detailed_itineraries()` hit a
+   real r5r bug: it hard-refuses to run against ANY network built from a
+   GTFS feed containing a `frequencies` table ("Assertion on
+   'r5r_network' failed..."), and `ch.gtfs.zip` has 1,887 frequency-based
+   trips (2.4% of its ~78,775 trips -- headway-based services like
+   "every 60 min, 06:45-22:45" instead of explicit departure times).
+   This blocked the diagnostic identically for all 40 cases -- confirmed
+   via `jstack`-style elimination, not assumed.
+   **Fix**: expanded those trips into explicit `stop_times` rows via
+   `gtfstools::frequencies_to_stop_times()` (424 sec), wrote a fixed
+   feed, and rebuilt the network (81.7 min -- did not reuse the OSM
+   MapDB cache from the first build, took about as long as building from
+   scratch). **Confirmed this fix changed ZERO routing outcomes** (63/100
+   missing before AND after) -- the frequencies table was only ever
+   blocking the r5r diagnostic tool itself, never real routing. This is
+   worth remembering: a GTFS validity/structure issue can silently break
+   analysis tooling while having no effect on the actual travel-time
+   results, so "the diagnostic tool errors" is not evidence that
+   "routing is broken because of X."
+3. With `detailed_itineraries()` now unblocked (and a `drop_geometry =
+   TRUE` fix for a second, unrelated bug in this script's own leg-
+   printing code -- the function returns an `sf` geometry column by
+   default, which crashed a `unique()` call), diagnosed all 63 originally-
+   failing cases precisely:
+
+   | Cause | Count | % |
+   |---|---|---|
+   | Access/egress walk distance too far (fails even at 240-min cap + 8h window) | 32 | 50.8% |
+   | Genuine network-connectivity gap (no RAIL path exists, unlimited walk + 8h window) | 29 | 46.0% |
+   | Search window too narrow (120 min -> works fine at 8h, standard 30-min cap) | 2 | 3.2% |
+
+   **Net conclusion: this was never really a "Swiss data" problem** --
+   the CH-specific bug fix didn't move the outcome at all. The real
+   story is walk-distance limits (which any real-world tourist without a
+   car would face too) and genuine connectivity gaps (no rail-only path
+   exists between many station pairs, in either country's data, possibly
+   because a real journey would require a bus leg that the RAIL-only
+   mode deliberately excludes). The 29 connectivity-gap cases are the
+   most interesting unresolved thread if this gets picked up again --
+   unlike the walk-distance cases, they're not explained by a parameter
+   choice.
+
+Scripts: `pt_r5r_rail_ch_it.R`, `pt_r5r_rail_ch_fr.R` (build + first
+test), `pt_r5r_rail_ch_fr_nowalkcap.R` (walk-cap isolation test),
+`pt_r5r_rail_ch_fr_fixed.R` (frequencies fix + rebuild + full pipeline,
+but crashed partway through its own diagnosis step on the geometry-column
+bug), `pt_r5r_rail_ch_fr_diagnose_only.R` (reruns just the fixed
+diagnosis step against the already-built network, without repeating the
+81.7-min rebuild). All are validation/experiment scripts, not yet wired
+into the numbered pipeline (`01_filter.R` -> `05_join.R`).
+
 ## Summary
 
 | Dataset | Method | Status |
@@ -154,3 +283,5 @@ path to real PT travel times if/when it's needed.
 | `car_times_ausland_CH.fst` (24.19M pairs) | `osrm.backend` local server, `/table` batched | Done, 0 missing |
 | `pt_times.csv` (agqpv pairs) via r5r tiled | Local, free, but ~60h -- killed mid-run (tile 8+/40) | Abandoned (too slow), not resumed |
 | `pt_times_google.csv` (agqpv pairs) via Google Routes API | Hosted, ~$0 for one run, fast | Written, never run |
+| CH+North-Italy rail-only sample (100 tourists) | r5r, single network, RAIL mode only | Built, 56/100 routed; root cause = missing regional GTFS (43% of origins); 2 replacement feeds verified, not yet merged |
+| CH+near-CH-France rail-only sample (100 tourists) | r5r, single network, RAIL mode only | Built, 37/100 routed; root causes fully diagnosed (51% walk-distance, 46% genuine connectivity gap, 3% search-window) |

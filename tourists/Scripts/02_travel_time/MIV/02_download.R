@@ -7,13 +7,13 @@
 # Requires the osmium command-line tool on PATH.
 #   In your conda env:  conda install -c conda-forge osmium-tool
 #
-# Run:  source("Scripts/02_travel_time/00_setup.R"); source("Scripts/02_travel_time/02_download.R")
+# Run:  source("Scripts/00_setup.R"); source("Scripts/02_travel_time/02_download.R")
 # ============================================================
 user = "MR"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
-source("Scripts/02_travel_time/00_setup.R")
+source("Scripts/00_setup.R")
 
 # --- Check osmium is available ----------------------------------------------
 osmium_ok <- nzchar(Sys.which("osmium"))

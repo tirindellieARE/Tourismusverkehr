@@ -5,3 +5,9 @@
 # of MB, which git handles poorly.
 tourists/data/
 tourists/results_output/
+
+# local Java for r5r, nested repo, R history, rendered READMEs
+tourists/rjavaenv/
+benzoni_thesis/
+tourists/.Rhistory
+tourists/Scripts/02_travel_time/*.html

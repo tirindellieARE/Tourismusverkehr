@@ -26,14 +26,14 @@
 # e.g. an Italy -> Zurich result and judge whether it's a real, sensible
 # route.
 #
-# Run:  source("Scripts/02_travel_time/00_setup.R"); source("Scripts/02_travel_time/transitous_test.R")
+# Run:  source("Scripts/00_setup.R"); source("Scripts/02_travel_time/transitous_test.R")
 # ============================================================
 
 user = "MR"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
-source("Scripts/02_travel_time/00_setup.R")
+source("Scripts/00_setup.R")
 if (!requireNamespace("httr2", quietly = TRUE)) install.packages("httr2", repos = "https://cloud.r-project.org")
 if (!requireNamespace("jsonlite", quietly = TRUE)) install.packages("jsonlite", repos = "https://cloud.r-project.org")
 library(httr2)

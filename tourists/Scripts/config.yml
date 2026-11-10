@@ -1,11 +1,53 @@
 # ============================================================
-# Configuration for the origin -> grenz travel-time pipeline
-# Edit paths and parameters here; scripts read from this file.
+# Configuration for the tourist model pipeline
+# (01_generation -> 02_travel_time -> ...)
+# Edit paths and parameters here; scripts read from this file
+# via `cfg` (loaded by Scripts/00_setup.R).
+# All paths are relative to the project root (set in 00_setup.R).
+# ============================================================
+
+# --- Project folders (created by 00_setup.R if missing) ---
+paths:
+  csv_in:   "data/input/csv"     # raw input tables (survey)
+  gpkg_in:  "data/input/gpkg"    # input geopackages (zones, LAU boundaries)
+  csv_out:  "data/output/csv"    # all CSV outputs
+  gpkg_out: "data/output/gpkg"   # geopackages written by the pipeline
+  fig_out:  "data/output/figures"
+
+# ============================================================
+# 01_generation: raw survey -> cleaned survey -> zone/commune assignment
+# ============================================================
+generation:
+  # --- 01_agqpv_clean.R ---
+  survey_csv:      "Finale_Auswertungsdatenbank_AGQPV2015_V2.csv"  # in paths$csv_in
+  survey_encoding: "Latin-1"
+
+  # Raw-survey filters (AGQPV codes)
+  filter:
+    exclude_start_country: "CH"   # STARTORTLANDISO != this (keep trips starting abroad)
+    dest_country_code:     1      # ZIELORTLAND == this (destination in Switzerland)
+    trip_purpose:          5      # FAHRTZWECK == this (leisure)
+
+  # --- 02_commune_assignment.R ---
+  zones_gpkg: "zones_communes.gpkg"   # Swiss zones/communes, in paths$gpkg_in
+  lau:                                # foreign municipalities (Eurostat GISCO LAU)
+    year: 2024
+    countries: ["IT", "FR", "AT", "DE"]   # Switzerland excluded (own layer)
+    url_template:  "https://gisco-services.ec.europa.eu/distribution/v2/lau/gpkg/LAU_RG_01M_%d_4326.gpkg"
+    file_template: "LAU_RG_01M_%d_4326.gpkg"   # in paths$gpkg_in, downloaded if missing
+
+  # --- Output file names (in paths$csv_out) ---
+  out:
+    agqpv_clean: "agqpv_clean.csv"   # output of 01
+    agqpv:       "agqpv.csv"         # output of 02; input to 02_travel_time
+
+# ============================================================
+# 02_travel_time
 # ============================================================
 
 # --- Input data ---
-input_csv: "data/output/agqpv.csv"    # your uploaded trip file (Latin-1 encoded)
-input_encoding: "latin1"
+input_csv: "data/output/csv/agqpv.csv"    # output of 01_generation/02_commune_assignment.R (UTF-8)
+input_encoding: "UTF-8"
 
 # --- Column names in the input CSV (edit if your headers differ) ---
 cols:
@@ -69,11 +111,11 @@ gtfs_feeds:
 
 # --- PT routing parameters (r5r) ---
 pt:
-  departure_date: "2026-09-15"       # a representative weekday (Tuesday)
+  departure_date: "2026-11-03"       # a representative weekday (Tuesday); must lie inside the validity period of all GTFS feeds (checked by OEV/FR_CH/test/04_..., never changed automatically)
   departure_time: "10:00:00"         # OFF-PEAK
   time_window_minutes: 120           # r5r samples departures across this window
   percentile: 50                     # median travel time
-  max_trip_duration_min: 600         # cap (10h) for long international trips
+  max_trip_duration_min: 1000         # cap (10h) for long international trips
   walk_speed_kmh: 4.0
   max_walk_time_min: 30              # access/egress walking cap
   modes: ["WALK", "TRANSIT"]
@@ -131,10 +173,29 @@ osrm:
 # logsum). There is no OSRM equivalent of tt_CH_CH: domestic CH->CH car
 # times still come from the OMX matrices, not from routing.
 out:
-  pairs: "data/output/pairs_to_route_agqpv.csv"
-  row_map: "data/output/row_to_pair_agqpv.csv"
-  car_times: "data/output/car_times_agqpv.csv"
-  pt_times: "data/output/pt_times.csv"
-  final: "data/output/model_input.csv"
-  origins_ausland: "data/output/origins_ausland.csv"
+  pairs: "data/output/csv/pairs_to_route_agqpv.csv"
+  row_map: "data/output/csv/row_to_pair_agqpv.csv"
+  car_times: "data/output/csv/car_times_agqpv.csv"
+  pt_times: "data/output/csv/pt_times.csv"
+  final: "data/output/csv/model_input.csv"
+  origins_ausland: "data/output/csv/origins_ausland.csv"
   car_times_ausland_ch: "data/output/car_times_ausland_CH.fst"
+
+# ============================================================
+# OEV/FR_CH: rail routing experiment, Switzerland + near-CH France
+# ============================================================
+oev_ch_fr:
+  # Outputs of the sample routing test (04_...) and of the OJP comparison (cff_check_travel_time.R)
+  test_dir: "data/test/CH_FR"
+  # Departure window of the full routing (04_pt_r5r_ch_fr_route_all.R), per group of trips.
+  # The date and percentile are those of pt:; these override pt$departure_time / pt$time_window_minutes.
+  route_all:
+    day:       {departure_time: "07:00:00", time_window_minutes: 180}   # n_nights == 0: 07:00-10:00
+    overnight: {departure_time: "07:00:00", time_window_minutes: 600}   # n_nights  > 0: 07:00-17:00
+  # French regions bordering Switzerland, as INSEE departement codes. French commune ids
+  # in agqpv.csv (origin_commune, e.g. "FR_74010") are INSEE codes whose first two digits
+  # are the departement, which fixes the region. Used by 03_ (network bbox) and 04_ (sample).
+  near_ch_depts:
+    "Auvergne-Rhône-Alpes":    ["01", "03", "07", "15", "26", "38", "42", "43", "63", "69", "73", "74"]
+    "Grand Est":               ["08", "10", "51", "52", "54", "55", "57", "67", "68", "88"]
+    "Bourgogne-Franche-Comté": ["21", "25", "39", "58", "70", "71", "89", "90"]

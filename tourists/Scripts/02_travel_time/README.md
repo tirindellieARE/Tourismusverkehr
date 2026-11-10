@@ -17,15 +17,33 @@ Scripts/02_travel_time/
 ├─ 03_car_osrm.R                    # car times via local OSRM -- agqpv pairs AND every
 │                                    #   ausland origin → every CH zone centroid (two
 │                                    #   datasets, one script: they share all their setup)
-├─ 04_pt_r5r.R                      # PT times via r5r (off-peak), agqpv pairs only
+├─ 04_pt_r5r.R                      # PT times via r5r (off-peak), agqpv pairs only -- tiled,
+│                                    #   all 5 countries; abandoned as too slow (~60h), see
+│                                    #   routing_readme.md
 ├─ 04_pt_google.R                   # PT times via Google Routes API (alternative to 04_pt_r5r.R)
 ├─ 05_join.R                        # merge agqpv car/PT times back to every row → model_input.csv
-└─ 06_build_tt_lookups.R            # CH-CH / ausland-CH / agqpv times from the OMX demand-model
-                                     # matrices (a different, older data source -- see its own header)
+├─ 06_build_tt_lookups.R            # CH-CH / ausland-CH / agqpv times from the OMX demand-model
+│                                    #   matrices (a different, older data source -- see its own header)
+├─ transitous_test.R                # validation: full itineraries from the public Transitous/
+│                                    #   MOTIS API, for sanity-checking PT routing quality
+└─ pt_r5r_rail_ch_it.R, pt_r5r_rail_ch_fr*.R   # EXPERIMENTAL: single-country-pair, rail-only r5r
+                                     #   networks (CH+North-Italy, CH+near-CH-France) tested on
+                                     #   100-tourist samples each. Not part of the numbered
+                                     #   pipeline yet -- see routing_readme.md for the full
+                                     #   writeup (bbox splits, GTFS gaps found, an r5r bug found
+                                     #   and worked around, and the final failure-cause diagnosis)
 data/input/                         # put agqpv.csv and zones_communes.gpkg here
 data/osm/  data/gtfs/  data/r5/     # created by scripts
 data/output/                        # all outputs
 ```
+
+**Experimental rail-only PT scripts** (`pt_r5r_rail_ch_it.R`, `pt_r5r_rail_ch_fr.R` and its
+follow-ups): a smaller-scope alternative to the abandoned tiled `04_pt_r5r.R`, restricted to
+Switzerland plus one neighbour country at a time and to the RAIL mode only. Both networks
+were built and tested on 100-tourist samples; see the "single-country-pair rail-only
+experiments" section of `routing_readme.md` for the full results, including a real GTFS
+coverage gap found for Italy (with two verified replacement feeds) and a full breakdown of
+why France's sample had a much lower success rate than raw data coverage would suggest.
 
 ## Run order
 

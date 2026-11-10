@@ -77,14 +77,14 @@
 #                                           car_dist_km (zone_no joins back to
 #                                           NO in data/input/zones_communes.gpkg)
 #
-# Run:  source("Scripts/02_travel_time/00_setup.R"); source("Scripts/02_travel_time/03_car_osrm.R")
+# Run:  source("Scripts/00_setup.R"); source("Scripts/02_travel_time/03_car_osrm.R")
 # ============================================================
 
 user = "MR"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
-source("Scripts/02_travel_time/00_setup.R")
+source("Scripts/00_setup.R")
 library(osrm)
 if (!requireNamespace("fst", quietly = TRUE)) install.packages("fst", repos = "https://cloud.r-project.org")
 if (!requireNamespace("data.table", quietly = TRUE)) install.packages("data.table", repos = "https://cloud.r-project.org")

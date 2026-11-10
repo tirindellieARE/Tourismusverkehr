@@ -38,14 +38,16 @@ library(data.table)
 # 1. SETTINGS
 # ============================================================
 
-user = "CP"
+user = "MR"
 if(user == "MR"){setwd("E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists")}
 if(user == "CP"){setwd("P:/Verkehrsmodellierung/06_Jobs/188_touristische_Verkehr/Model_trafic_touristique/GitRepo/tourists")}
 
-data_dir <- "data/output"
-dir.create(data_dir, recursive = TRUE, showWarnings = FALSE)
+CSV_DIR      <- "data/output/csv"     # CSV inputs/outputs
+GPKG_DIR     <- "data/output/gpkg"    # geopackages written by this script
+GPKG_IN_DIR  <- "data/input/gpkg"     # input geopackages (LAU boundaries)
+for (d in c(CSV_DIR, GPKG_DIR, GPKG_IN_DIR)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
-agqpv = fread("data/output/agqpv_CHcommune.csv")
+agqpv = fread(file.path(CSV_DIR, "agqpv_CHcommune.csv"), encoding = "Latin-1")
 
 
 lau_year         <- 2024
@@ -63,8 +65,8 @@ lau_url  <- sprintf(
   "https://gisco-services.ec.europa.eu/distribution/v2/lau/gpkg/LAU_RG_01M_%d_4326.gpkg",
   lau_year
 )
-lau_file      <- file.path(data_dir, sprintf("LAU_RG_01M_%d_4326.gpkg", lau_year))
-communes_file <- file.path(data_dir, "communes_ausland.gpkg")
+lau_file      <- file.path(GPKG_IN_DIR, sprintf("LAU_RG_01M_%d_4326.gpkg", lau_year))
+communes_file <- file.path(GPKG_DIR, "communes_ausland.gpkg")
 
 
 # ============================================================
@@ -76,7 +78,7 @@ communes_file <- file.path(data_dir, "communes_ausland.gpkg")
 # Delete that file (or set rebuild <- TRUE) to force a refresh.
 # ============================================================
 
-rebuild <- FALSE   # set TRUE to force re-download even if the file exists
+rebuild <- TRUE   # set TRUE to force re-download even if the file exists
 
 if (!rebuild && file.exists(communes_file)) {
   
@@ -249,8 +251,15 @@ agqpv[, origin_commune_nearest := origin_res$nearest]
 residence_res <- assign_commune(agqpv$residence_long, agqpv$residence_lat, zones_ausland_sf)
 agqpv[, residence_commune         := residence_res$commune]
 agqpv[, residence_commune_nearest := residence_res$nearest]
-fwrite(agqpv, "data/output/agqpv.csv")
+fwrite(agqpv, file.path(CSV_DIR, "agqpv.csv"))
 
+test_residence = dplyr::filter(zones_ausland_sf, zone_id %in% unique(agqpv$residence_commune))
+test_origin = dplyr::filter(zones_ausland_sf, zone_id %in% unique(agqpv$origin_commune))
+
+mapview(test_origin)
+mapview(test_residence)
+
+# st_write(zones_ausland_sf, "data/shp/communes_ausland/communes_ausland.shp", delete_dsn = TRUE)
 
 # CHECK
 message("\nForeign commune assignment:")

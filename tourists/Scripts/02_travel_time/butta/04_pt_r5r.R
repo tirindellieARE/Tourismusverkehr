@@ -65,16 +65,16 @@
 # that via options(java.parameters=...). Do not load r5r earlier.
 #
 # Run in a FRESH R session:
-#   source("Scripts/02_travel_time/00_setup.R")  # for cfg + helpers (does NOT load r5r)
+#   source("Scripts/00_setup.R")  # for cfg + helpers (does NOT load r5r)
 #   source("Scripts/02_travel_time/04_pt_r5r.R")
 # ============================================================
 
 # --- Set JVM heap BEFORE anything loads r5r ---------------------------------
 # Read config minimally first (00_setup also reads it, but we need memory now).
-.cfg0 <- yaml::read_yaml("Scripts/02_travel_time/config.yml")
+.cfg0 <- yaml::read_yaml("Scripts/config.yml")
 options(java.parameters = paste0("-Xmx", .cfg0$java_max_mem))
 
-source("Scripts/02_travel_time/00_setup.R")   # loads cfg, helpers (r5r intentionally not in .pkgs)
+source("Scripts/00_setup.R")   # loads cfg, helpers (r5r intentionally not in .pkgs)
 
 # --- Load r5r now that heap is set ------------------------------------------
 if (!requireNamespace("r5r", quietly = TRUE)) {
