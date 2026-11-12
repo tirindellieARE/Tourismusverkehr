@@ -77,6 +77,7 @@ SNAP_MIN_M    <- 200                              # destinations further than th
 SNAP_RADIUS_M <- 20000                            # search radius of the snapping
 CHUNK_ORIGINS <- 200                              # origin stations per travel_time_matrix() call
 N_THREADS     <- Inf                              # r5r threads for the minute scan / itineraries
+MATRIX_THREADS <- 12                              # threads of the full-window travel_time_matrix(): all 32 ran out of Java memory (10 h window, Lyon + Dijon feeds)
 LEGS_BATCH    <- 200                              # pairs per batch of itineraries written to disk
 STOP_MATCH_M  <- 150                              # max distance to name a leg's start/end stop
 
@@ -222,7 +223,7 @@ fwrite(pairs[, !c("pair_key", "d_key")], file.path(OUT_DIR, "pt_ch_fr_pairs.csv"
 # Errors are NOT swallowed, so a real problem stops the script instead of turning into NA.
 route_pairs <- function(p, percentiles, dep = departure, window = cfg$pt$time_window_minutes,
                         max_rides = MAX_RIDES, max_walk_time = MAX_WALK_MIN, max_trip_duration = MAX_TRIP_MIN,
-                        n_threads = Inf, label = NULL) {
+                        n_threads = MATRIX_THREADS, label = NULL) {
   percentiles <- sort(unique(percentiles))
   need <- unique(p[, .(from_id = nearest_stop_id, to_id = d_key)])
   st   <- unique(p[, .(id = nearest_stop_id, lat = nearest_stop_lat, lon = nearest_stop_lon)], by = "id")

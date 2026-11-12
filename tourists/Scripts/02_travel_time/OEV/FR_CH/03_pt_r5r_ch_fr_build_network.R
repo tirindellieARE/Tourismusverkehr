@@ -17,11 +17,28 @@
 #   the street network, its stations can't be linked and those trips fail.
 #
 # GTFS FEEDS (copied into NET_DIR)
-#   ch.gtfs.zip               Swiss national feed
+#   ch.freqfixed.gtfs.zip     Swiss national feed, frequencies expanded (02_clean_CH_gtfs.R)
 #   fr.gtfs.zip               SNCF national feed (TER, Intercités, TGV)
 #   fr.Paris.gtfs.clean.zip   IDFM feed (metro, RER, Transilien, tram),
 #                             cleaned with 01_clean_fr_gtfs.R
+#   fr.Lyon.gtfs.clean.zip    TCL Lyon (metro, tram, funicular, bus), cleaned with
+#                             01b_clean_lyon_gtfs.R (the raw feed has stops with a
+#                             non-existent parent_station, which stops the r5r build)
+#   fr.Dijon.gtfs.zip         Divia Dijon (tram, bus), used as downloaded
 #   Feed file names must stay distinct: R5 uses them as feed IDs.
+#   Lyon and Dijon are there because r5r has no local transit otherwise: the walk between
+#   two stations of the same city (Lyon Saint-Paul -> Part-Dieu, 48 min) was routed on foot.
+#
+#   Where to get the raw feeds (put them in data/input/gtfs, file names as above):
+#     Lyon   data.grandlyon.com, "Horaires théoriques du réseau TCL" (GTFS_TCL.ZIP, free
+#            account needed); also on transport.data.gouv.fr, dataset "Réseau urbain TCL".
+#     Dijon  transport.data.gouv.fr, dataset "gtfs-diviamobilites" (gtfs-diviamobilites-current.zip)
+#     Paris  transport.data.gouv.fr / IDFM, "Horaires prévus sur les lignes de transport
+#            en commun d'Île-de-France (GTFS)"; clean it with 01_clean_fr_gtfs.R
+#   Local feeds are replaced often and each is valid for a few weeks only (the Paris one
+#   for ~5 weeks, TCL from its feed_start_date). cfg$pt$departure_date must be a day with
+#   service in ALL of them; the script checks this (check_feed_dates) before building.
+#   Download the feeds close to the routing date, re-clean Paris, then rebuild.
 #
 # OUTPUTS
 #   NET_DIR/network.osm.pbf, network.dat   the r5r network
@@ -63,9 +80,14 @@ DE_PBF <- "data/input/osm/baden-wuerttemberg-latest.osm.pbf"
 # GTFS: raw feeds in data/input/gtfs, feeds produced by our own scripts in data/output/gtfs
 #   ch.freqfixed.gtfs.zip     <- frequencies expanded (02_clean_CH_gtfs.R)
 #   fr.Paris.gtfs.clean.zip   <- 01_clean_fr_gtfs.R
+#   fr.Lyon.gtfs.clean.zip    <- 01b_clean_lyon_gtfs.R
+#   fr.Dijon.gtfs.zip         raw feed, no cleaning needed
 GTFS_FEEDS <- c("data/output/gtfs/ch.freqfixed.gtfs.zip",
                 "data/input/gtfs/fr.gtfs.zip",
-                "data/output/gtfs/fr.Paris.gtfs.clean.zip")
+                "data/output/gtfs/fr.Paris.gtfs.clean.zip",
+                "data/output/gtfs/fr.Lyon.gtfs.clean.zip",
+                "data/input/gtfs/fr.Dijon.gtfs.zip")
+ROUTING_DATE <- cfg$pt$departure_date   # date the routing will use (config.yml, pt:)
 
 OSMIUM_DIR    <- "C:/Users/Modellrechner.ARE/miniforge3/envs/r5/Library/bin"
 BUILD_NETWORK <- FALSE   # TRUE = rebuild the network (slow), FALSE = keep the existing one
@@ -76,6 +98,41 @@ ensure_dir(NET_DIR); ensure_dir(STAGING_DIR)
 area_km2 <- function(xmin, ymin, xmax, ymax) {
   midlat <- (ymin + ymax) / 2
   (xmax - xmin) * 111.32 * cos(midlat * pi / 180) * (ymax - ymin) * 111.32
+}
+
+# --- Do all feeds have service on the routing date? -------------------------------
+# Reads calendar.txt / calendar_dates.txt / trips.txt of each feed and counts the trips
+# running on `date` (calendar_dates additions and removals included).
+check_feed_dates <- function(feeds, date) {
+  d8 <- gsub("-", "", date)
+  wd <- c("sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday")[as.POSIXlt(as.Date(date))$wday + 1]
+  rbindlist(lapply(feeds, function(z) {
+    td <- file.path(tempdir(), paste0("feedcheck_", basename(z))); ensure_dir(td)
+    inz <- unzip(z, list = TRUE)$Name
+    unzip(z, files = inz[basename(inz) %in% c("trips.txt", "calendar.txt", "calendar_dates.txt")], exdir = td, junkpaths = TRUE)
+    rd <- function(f, ...) if (file.exists(file.path(td, f))) fread(file.path(td, f), colClasses = "character", encoding = "UTF-8", ...) else NULL
+    tr <- rd("trips.txt", select = c("trip_id", "service_id")); cal <- rd("calendar.txt"); cd <- rd("calendar_dates.txt")
+    act <- character()
+    if (!is.null(cal)) act <- union(act, cal[start_date <= d8 & end_date >= d8 & get(wd) == "1", service_id])
+    if (!is.null(cd))  { act <- union(act, cd[date == d8 & exception_type == "1", service_id])
+                         act <- setdiff(act, cd[date == d8 & exception_type == "2", service_id]) }
+    all_dates <- c(if (!is.null(cal)) c(cal$start_date, cal$end_date), if (!is.null(cd)) cd$date)
+    unlink(td, recursive = TRUE)
+    data.table(feed = basename(z), first_date = min(all_dates), last_date = max(all_dates),
+               trips_total = nrow(tr), trips_on_date = tr[service_id %in% act, .N])
+  }))
+}
+
+missing_feeds <- GTFS_FEEDS[!file.exists(GTFS_FEEDS)]
+if (length(missing_feeds)) stop("Missing feed(s): ", paste(missing_feeds, collapse = ", "))
+feed_check <- check_feed_dates(GTFS_FEEDS, ROUTING_DATE)
+log_msg(sprintf("Service on the routing date %s:", ROUTING_DATE))
+print(as.data.frame(feed_check), row.names = FALSE)
+# A feed with only a few trips on the date (e.g. 1,497 of 144,199 for TCL on a date before
+# its new timetable started) is as bad as none: compare with its typical weekday.
+if (any(feed_check$trips_on_date == 0)) {
+  stop("No service on ", ROUTING_DATE, " in: ", paste(feed_check$feed[feed_check$trips_on_date == 0], collapse = ", "),
+       ". Change pt$departure_date in config.yml, or update the feed.")
 }
 
 # --- Near-CH French-origin tourists ------------------------------------------
@@ -112,9 +169,6 @@ if (BUILD_NETWORK) {
   Sys.setenv(PATH = paste(OSMIUM_DIR, Sys.getenv("PATH"), sep = ";"))
   if (!nzchar(Sys.which("osmium"))) stop("osmium not found -- check OSMIUM_DIR.")
   if (!all(file.exists(c(CH_PBF, FR_PBF, DE_PBF)))) stop("Missing OSM extracts -- check data/input/osm/.")
-  
-  missing_feeds <- GTFS_FEEDS[!file.exists(GTFS_FEEDS)]
-  if (length(missing_feeds)) stop("Missing feed(s): ", paste(missing_feeds, collapse = ", "))
   
   # Any other GTFS zip in NET_DIR would be loaded too (e.g. the uncleaned IDFM feed)
   extra <- setdiff(list.files(NET_DIR, pattern = "\\.zip$"), basename(GTFS_FEEDS))

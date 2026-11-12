@@ -111,7 +111,7 @@ gtfs_feeds:
 
 # --- PT routing parameters (r5r) ---
 pt:
-  departure_date: "2026-11-03"       # a representative weekday (Tuesday); must lie inside the validity period of all GTFS feeds (checked by OEV/FR_CH/test/04_..., never changed automatically)
+  departure_date: "2026-11-17"       # a representative weekday (Tuesday); must have service in ALL feeds of the network (checked by 03_ and by OEV/FR_CH/test/04_..., never changed automatically)
   departure_time: "10:00:00"         # OFF-PEAK
   time_window_minutes: 120           # r5r samples departures across this window
   percentile: 50                     # median travel time
