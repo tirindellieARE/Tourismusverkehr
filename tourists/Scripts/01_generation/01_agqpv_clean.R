@@ -22,7 +22,7 @@ agqpv <- raw[STARTORTLANDISO != gen$filter$exclude_start_country &
 # --- Select and rename columns -------------------------------------------------
 old_names <- c("BEFRAGUNGSORTID", "BEFRAGUNGSORT", "WOHNORTLAND", "WOHNORTORTLATITUDE", "WOHNORTORTLONGITUDE",
                "STARTORTLAND", "STARTORTORTLATITUDE", "STARTORTORTLONGITUDE",
-               "ZIELORTORTLATITUDE", "ZIELORTORTLONGITUDE", "ZIELORTGEONAMESID_BFSNUMMER",
+               "ZIELORTORTLATITUDE", "ZIELORTORTLONGITUDE", "ZIELORTORT",
                "ANZAHLUEBERNACHTUNGEN", "VERKEHRSTRAEGER", "GEWICHT")
 new_names <- c("grenz_id", "grenz", "nationality", "residence_lat", "residence_long",
                "origin_country", "origin_lat", "origin_long",

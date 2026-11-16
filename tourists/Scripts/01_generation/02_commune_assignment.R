@@ -65,15 +65,30 @@ zones_sf <- zones_sf[!is.na(zones_sf$MAKROBEZ_STAAT), ]
 if (nrow(zones_sf) < n_before) {
   log_msg(sprintf("Dropped %d zone(s) with missing MAKROBEZ_STAAT", n_before - nrow(zones_sf)))
 }
-zone_attr <- unique(as.data.table(st_drop_geometry(zones_sf)[, c("NO", "STALAN2020", "MAKROBEZ_STAAT")]),
+zone_attr <- unique(as.data.table(st_drop_geometry(zones_sf)[, c("GDENAME", "GDEHISTID", "STALAN2020", "MAKROBEZ_STAAT")]),
                     by = "NO")
 zone_attr[, NO := as.character(NO)]   # assign_points() returns ids as character
 
 # Destination
 agqpv[, destination_zone := assign_points(dest_long, dest_lat, zones_sf, "NO")]
 agqpv[zone_attr, on = c(destination_zone = "NO"),
-      `:=`(dest_zone_topology = i.STALAN2020, dest_zone_country = i.MAKROBEZ_STAAT)]
+      `:=`(dest_zone_topology = i.STALAN2020, dest_zone_country = i.MAKROBEZ_STAAT, GDEHISTID = i.GDEHISTID)]
 
+hesta_pasta_max = fread("data/output/csv/hesta_pasta_long_max.csv")
+hesta_pasta_max <- hesta_pasta_max |>
+  dplyr::filter(!is.na(E), !is.na(N)) |>  
+  st_as_sf(coords = c("E", "N"), crs = 2056, remove = FALSE)|>
+  st_transform(4326) |>
+  mutate(dest_lon_new = st_coordinates(geometry)[, 1],
+         dest_lat_new = st_coordinates(geometry)[, 2]) |>
+  st_drop_geometry()|>     
+  dplyr::select(Name,GDEHISTID, nationality, dest_lon_new, dest_lat_new)
+         
+
+agqpv[hesta_pasta_max, on = c("GDEHISTID", "nationality"), 
+      `:=`(dest_lon_new = i.dest_lon_new, dest_lat_new = i.dest_lat_new)]
+
+a = dplyr::filter(agqpv, is.na(dest_lon_new) & nationality == 4)
 # The survey has a few records with placeholder destination coordinates (e.g.
 # Basel-Weil, Milan, Besancon; dest_commune is 0/NA) although ZIELORTLAND == 1.
 bad_dest <- is.na(agqpv$destination_zone) | agqpv$dest_zone_country != "CH"

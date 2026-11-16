@@ -9,7 +9,7 @@
 
 # --- Project root ------------------------------------------------------------
 # Set your user here. Add a line for a new machine/user.
-user <- "MR"
+user <- "CP"
 
 project_roots <- c(
   MR = "E:/ARE/ProjekteTIE/Turismusverkehr/RScript/tourists",
